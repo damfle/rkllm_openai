@@ -5,7 +5,16 @@ Tool utilities for parsing and handling function calls.
 import json
 import re
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
+
+from pydantic import BaseModel
+
+
+def _to_dict(obj: Union[dict, BaseModel]) -> dict:
+    """Convert Pydantic model or dict to dict."""
+    if isinstance(obj, BaseModel):
+        return obj.model_dump()
+    return obj
 
 
 def parse_tool_calls(content: str) -> List[dict]:
@@ -43,37 +52,41 @@ def clean_content_for_tools(content: str) -> str:
     return cleaned.strip()
 
 
-def convert_openai_tools_to_rkllm_format(tools: List[dict]) -> str:
+def convert_openai_tools_to_rkllm_format(tools: List[Union[dict, BaseModel]]) -> str:
     """Convert OpenAI tool format to RKLLM-compatible JSON string."""
     if not tools:
         return ""
 
     rkllm_tools = []
     for tool in tools:
-        if tool.get("type") == "function":
-            function = tool.get("function", {})
+        tool_dict = _to_dict(tool)
+        if tool_dict.get("type") == "function":
+            function = tool_dict.get("function", {})
+            function_dict = _to_dict(function)
             rkllm_tool = {
-                "name": function.get("name", ""),
-                "description": function.get("description", ""),
-                "parameters": function.get("parameters", {}),
+                "name": function_dict.get("name", ""),
+                "description": function_dict.get("description", ""),
+                "parameters": function_dict.get("parameters", {}),
             }
             rkllm_tools.append(rkllm_tool)
 
     return json.dumps(rkllm_tools)
 
 
-def format_tools_for_prompt(tools: List[dict]) -> str:
+def format_tools_for_prompt(tools: List[Union[dict, BaseModel]]) -> str:
     """Format tools for inclusion in prompt."""
     if not tools:
         return ""
 
     tool_descriptions = []
     for tool in tools:
-        if tool.get("type") == "function":
-            function = tool.get("function", {})
-            name = function.get("name", "")
-            description = function.get("description", "")
-            parameters = function.get("parameters", {})
+        tool_dict = _to_dict(tool)
+        if tool_dict.get("type") == "function":
+            function = tool_dict.get("function", {})
+            function_dict = _to_dict(function)
+            name = function_dict.get("name", "")
+            description = function_dict.get("description", "")
+            parameters = function_dict.get("parameters", {})
 
             tool_desc = f"Function: {name}\nDescription: {description}"
             if parameters.get("properties"):
@@ -98,7 +111,9 @@ def format_tools_for_prompt(tools: List[dict]) -> str:
     )
 
 
-def get_system_prompt_with_tools(original_system_prompt: str, tools: List[dict]) -> str:
+def get_system_prompt_with_tools(
+    original_system_prompt: str, tools: List[Union[dict, BaseModel]]
+) -> str:
     """Combine system prompt with tool instructions."""
     if not tools:
         return original_system_prompt
@@ -111,7 +126,7 @@ def get_system_prompt_with_tools(original_system_prompt: str, tools: List[dict])
         return f"You are a helpful assistant.{tool_instructions}"
 
 
-def should_force_tool_use(tool_choice: Optional[str | dict]) -> bool:
+def should_force_tool_use(tool_choice: Optional[Union[str, dict]]) -> bool:
     """Check if tool use should be forced based on tool_choice."""
     if tool_choice is None or tool_choice == "auto":
         return False
@@ -124,7 +139,7 @@ def should_force_tool_use(tool_choice: Optional[str | dict]) -> bool:
     return False
 
 
-def get_forced_tool_name(tool_choice: Optional[str | dict]) -> Optional[str]:
+def get_forced_tool_name(tool_choice: Optional[Union[str, dict]]) -> Optional[str]:
     """Get the specific tool name if tool use is forced to a specific function."""
     if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
         function = tool_choice.get("function", {})
