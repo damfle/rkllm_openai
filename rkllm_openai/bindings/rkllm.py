@@ -7,7 +7,6 @@ and provides a Python interface for model loading, inference, and management.
 
 import ctypes
 import os
-import sys
 import threading
 from typing import List
 

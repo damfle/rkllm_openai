@@ -291,18 +291,13 @@ def main():
     """Main entry point for the server."""
     parser = argparse.ArgumentParser(description="RKLLM OpenAI-compatible server")
     parser.add_argument(
-        "--model-path", required=True, help="Path to directory containing model files"
+        "--model-path", required=True, help="Path to RKLLM model file (.rkllm)"
     )
     parser.add_argument(
         "--platform", choices=["rk3588", "rk3576"], default="rk3588", help="Platform"
     )
     parser.add_argument("--lib-path", required=True, help="Path to RKLLM library")
-    parser.add_argument(
-        "--models-allowlist",
-        required=True,
-        nargs="+",
-        help="List of allowed model names",
-    )
+
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
     parser.add_argument(
@@ -317,13 +312,13 @@ def main():
 
     args = parser.parse_args()
 
-    # Validate model path (now a directory)
+    # Validate model path (single file)
     if not os.path.exists(args.model_path):
-        print(f"Error: Model directory not found: {args.model_path}")
+        print(f"Error: Model file not found: {args.model_path}")
         sys.exit(1)
 
-    if not os.path.isdir(args.model_path):
-        print(f"Error: Model path must be a directory: {args.model_path}")
+    if not os.path.isfile(args.model_path):
+        print(f"Error: Model path must be a file: {args.model_path}")
         sys.exit(1)
 
     # Validate library path
@@ -335,15 +330,23 @@ def main():
     global model_manager
     try:
         model_manager = ModelManager(
-            model_dir=args.model_path,
+            model_path=args.model_path,
             platform=args.platform,
             lib_path=args.lib_path,
-            allowed_models=set(args.models_allowlist),
             model_timeout=args.model_timeout,
+            chat_template=args.chat_template,
         )
         print(
-            f"Model manager initialized with models: {list(model_manager.get_available_models())}"
+            f"Model manager initialized with model: {list(model_manager.get_available_models())[0]}"
         )
+
+        # Log chat template status
+        if args.chat_template:
+            if os.path.exists(args.chat_template):
+                print(f"Chat template configured: {args.chat_template}")
+            else:
+                print(f"Warning: Chat template file not found: {args.chat_template}")
+
     except Exception as e:
         print(f"Error initializing model manager: {e}")
         sys.exit(1)

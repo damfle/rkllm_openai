@@ -12,7 +12,6 @@ from .models import (
     ToolCall,
     ToolFunction,
 )
-from .prompt_utils import extract_system_prompt
 from .tool_utils import clean_content_for_tools, parse_tool_calls
 
 # Conditionally import response generators to avoid Flask dependency issues
@@ -37,8 +36,6 @@ __all__ = [
     "Tool",
     "ToolCall",
     "ToolFunction",
-    # Prompt utilities
-    "extract_system_prompt",
     # Tool utilities
     "parse_tool_calls",
     "clean_content_for_tools",

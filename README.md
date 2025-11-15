@@ -50,26 +50,26 @@ pip install -e .[dev]
 
 ## Quick Start
 
-### 1. Prepare Your Models
+### 1. Prepare Your Model
 
-Organize your RKLLM model files in a directory:
+Prepare your RKLLM model file:
 
 ```
-/path/to/models/
-├── model1.rkllm
-├── model2.bin
-├── model3/
-│   └── model.rkllm
-└── chat_template.jinja2
+/path/to/model.rkllm
+```
+
+Optionally, prepare a chat template file:
+
+```
+/path/to/chat_template.jinja2
 ```
 
 ### 2. Start the Server
 
 ```bash
 rkllm-openai-server \
-  --model-path /path/to/models \
+  --model-path /path/to/model.rkllm \
   --lib-path /path/to/librkllm.so \
-  --models-allowlist model1 model2 model3 \
   --platform rk3588 \
   --host 0.0.0.0 \
   --port 8080
@@ -104,9 +104,8 @@ print(response.choices[0].message.content)
 
 | Argument | Description | Required | Default |
 |----------|-------------|----------|---------|
-| `--model-path` | Directory containing model files | Yes | - |
+| `--model-path` | Path to RKLLM model file (.rkllm) | Yes | - |
 | `--lib-path` | Path to RKLLM library (.so file) | Yes | - |
-| `--models-allowlist` | List of allowed model names | Yes | - |
 | `--platform` | Target platform (rk3588, rk3576) | No | rk3588 |
 | `--host` | Server host address | No | 127.0.0.1 |
 | `--port` | Server port | No | 8000 |
@@ -124,10 +123,10 @@ rkllm-openai-server \
   --platform rk3588
 
 # Advanced configuration
+```bash
 rkllm-openai-server \
-  --model-path /data/models \
+  --model-path /data/models/llama2-7b.rkllm \
   --lib-path /usr/lib/librkllm.so \
-  --models-allowlist llama2-7b llama2-13b qwen-7b qwen-14b \
   --platform rk3588 \
   --host 0.0.0.0 \
   --port 8080 \

@@ -19,31 +19,31 @@ class ModelManager:
 
     def __init__(
         self,
-        model_dir: str,
+        model_path: str,
         platform: str,
         lib_path: str,
-        allowed_models: Set[str],
         model_timeout: int = 300,  # 5 minutes default
+        chat_template: Optional[str] = None,
     ):
         """
         Initialize the model manager.
 
         Args:
-            model_dir: Directory containing model files
+            model_path: Path to the RKLLM model file
             platform: Platform identifier (rk3588, rk3576)
             lib_path: Path to RKLLM library
-            allowed_models: Set of allowed model names
             model_timeout: Time in seconds before unloading inactive models
+            chat_template: Optional path to chat template file
         """
-        self.model_dir = Path(model_dir)
+        self.model_path = Path(model_path)
+        self.model_name = self.model_path.stem  # Extract filename without extension
         self.platform = platform
         self.lib_path = lib_path
-        self.allowed_models = allowed_models
         self.model_timeout = model_timeout
+        self.chat_template = chat_template
 
         # Model storage and metadata
         self._models: Dict[str, RKLLM] = {}
-        self._model_paths: Dict[str, str] = {}
         self._last_used: Dict[str, float] = {}
         self._lock = threading.RLock()
 
@@ -51,37 +51,14 @@ class ModelManager:
         self._cleanup_thread = None
         self._stop_cleanup = threading.Event()
 
-        # Discover available models
-        self._discover_models()
+        # Validate model file exists
+        if not self.model_path.exists():
+            raise ValueError(f"Model file does not exist: {self.model_path}")
+
+        print(f"Model configured: {self.model_name} -> {self.model_path}")
 
         # Start cleanup thread
         self._start_cleanup_thread()
-
-    def _discover_models(self):
-        """Discover model files in the model directory."""
-        if not self.model_dir.exists():
-            raise ValueError(f"Model directory does not exist: {self.model_dir}")
-
-        for model_name in self.allowed_models:
-            # Look for model file with common extensions
-            for ext in [".rkllm", ".bin", ""]:
-                model_path = self.model_dir / f"{model_name}{ext}"
-                if model_path.exists():
-                    self._model_paths[model_name] = str(model_path)
-                    break
-            else:
-                # Check if it's a directory with model files
-                model_subdir = self.model_dir / model_name
-                if model_subdir.is_dir():
-                    # Look for model files in subdirectory
-                    for ext in [".rkllm", ".bin"]:
-                        for model_file in model_subdir.glob(f"*{ext}"):
-                            self._model_paths[model_name] = str(model_file)
-                            break
-                        if model_name in self._model_paths:
-                            break
-
-        print(f"Discovered models: {list(self._model_paths.keys())}")
 
     def _start_cleanup_thread(self):
         """Start the background cleanup thread."""
@@ -109,13 +86,21 @@ class ModelManager:
         if model_name in self._models:
             return self._models[model_name]
 
-        if model_name not in self._model_paths:
-            raise ValueError(f"Model {model_name} not found in model directory")
+        if model_name != self.model_name:
+            raise ValueError(
+                f"Model {model_name} not available. Only {self.model_name} is configured"
+            )
 
         print(f"Loading model: {model_name}")
         try:
-            model = RKLLM(self._model_paths[model_name], self.platform, self.lib_path)
+            model = RKLLM(str(self.model_path), self.platform, self.lib_path)
             self._models[model_name] = model
+
+            # Apply chat template if configured
+            if self.chat_template and os.path.exists(self.chat_template):
+                model.load_chat_template_from_file(self.chat_template)
+                print(f"Applied chat template to model: {model_name}")
+
             print(f"Successfully loaded model: {model_name}")
             return model
         except Exception as e:
@@ -146,10 +131,12 @@ class ModelManager:
             RKLLM instance
 
         Raises:
-            ValueError: If model is not in allowlist or not found
+            ValueError: If model is not the configured model
         """
-        if model_name not in self.allowed_models:
-            raise ValueError(f"Model {model_name} not in allowlist")
+        if model_name != self.model_name:
+            raise ValueError(
+                f"Model {model_name} not available. Only {self.model_name} is configured"
+            )
 
         with self._lock:
             # Check if we need to unload other models first
@@ -177,7 +164,7 @@ class ModelManager:
 
     def get_available_models(self) -> Set[str]:
         """Get the set of available model names."""
-        return set(self._model_paths.keys())
+        return {self.model_name}
 
     def preload_model(self, model_name: str):
         """Preload a model without waiting for a request."""
@@ -208,28 +195,34 @@ class ModelManager:
     def get_model_info(self) -> Dict[str, Dict]:
         """Get information about all models."""
         with self._lock:
-            info = {}
-            for model_name in self.allowed_models:
-                info[model_name] = {
-                    "available": model_name in self._model_paths,
-                    "loaded": model_name in self._models,
-                    "path": self._model_paths.get(model_name),
-                    "last_used": self._last_used.get(model_name),
+            info = {
+                self.model_name: {
+                    "available": True,
+                    "loaded": self.model_name in self._models,
+                    "path": str(self.model_path),
+                    "last_used": self._last_used.get(self.model_name),
                 }
+            }
             return info
 
     def extend_model_timeout(self, model_name: str):
         """Extend the timeout for a specific model."""
+        if model_name != self.model_name:
+            raise ValueError(
+                f"Model {model_name} not available. Only {self.model_name} is configured"
+            )
+
         with self._lock:
             if model_name in self._models:
                 self._last_used[model_name] = time.time()
 
-    def set_model_timeout(self, timeout: int):
-        """Set the global model timeout."""
-        self.model_timeout = max(60, timeout)  # Minimum 1 minute
-
     def load_chat_template(self, model_name: str, template_path: str):
         """Load a chat template for a specific model."""
+        if model_name != self.model_name:
+            raise ValueError(
+                f"Model {model_name} not available. Only {self.model_name} is configured"
+            )
+
         with self._lock:
             if model_name in self._models:
                 model = self._models[model_name]
@@ -240,11 +233,3 @@ class ModelManager:
                     print(f"Warning: Chat template file not found: {template_path}")
             else:
                 print(f"Model {model_name} not loaded, cannot set chat template")
-
-    def __enter__(self):
-        """Context manager entry."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.shutdown()

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-Test suite for ModelManager class.
-
-Tests model loading, unloading, and lifecycle management.
+Test ModelManager with current single-model implementation.
 """
 
 import os
@@ -17,340 +15,465 @@ import pytest
 from rkllm_openai.model_manager import ModelManager
 
 
-class MockRKLLM:
-    """Mock RKLLM class for testing."""
-
-    def __init__(self, model_path, platform, lib_path):
-        self.model_path = model_path
-        self.platform = platform
-        self.lib_path = lib_path
-        self.released = False
-
-    def release(self):
-        """Mock release method."""
-        self.released = True
-
-    def generate(self, prompt, **kwargs):
-        """Mock generate method."""
-        return f"Response to: {prompt}"
-
-    def get_embeddings(self, text):
-        """Mock embeddings method."""
-        return [0.1] * 768
-
-
-@pytest.fixture
-def temp_model_dir():
-    """Create temporary directory with mock model files."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        model_dir = Path(tmpdir)
-
-        # Create mock model files
-        (model_dir / "model1.rkllm").touch()
-        (model_dir / "model2.bin").touch()
-
-        # Create subdirectory with model
-        subdir = model_dir / "model3"
-        subdir.mkdir()
-        (subdir / "model.rkllm").touch()
-
-        yield str(model_dir)
-
-
-@pytest.fixture
-def mock_rkllm():
-    """Mock RKLLM class."""
-    with patch("rkllm_openai.model_manager.RKLLM", MockRKLLM):
-        yield MockRKLLM
-
-
 class TestModelManager:
-    """Test ModelManager functionality."""
+    """Test the ModelManager class with single model support."""
 
-    def test_init_and_discovery(self, temp_model_dir):
-        """Test model manager initialization and model discovery."""
-        allowed_models = {"model1", "model2", "model3"}
+    @pytest.fixture
+    def temp_model_file(self):
+        """Create a temporary model file for testing."""
+        with tempfile.NamedTemporaryFile(suffix=".rkllm", delete=False) as temp_file:
+            temp_file.write(b"dummy model content")
+            temp_file_path = temp_file.name
 
-        with patch("rkllm_openai.model_manager.RKLLM", MockRKLLM):
-            manager = ModelManager(
-                model_dir=temp_model_dir,
+        yield temp_file_path
+
+        # Cleanup
+        if os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
+
+    @pytest.fixture
+    def temp_chat_template(self):
+        """Create a temporary chat template file."""
+        template_content = """
+{%- for message in messages %}
+<|im_start|>{{ message['role'] }}
+{{ message['content'] }}<|im_end|>
+{%- endfor %}
+<|im_start|>assistant
+""".strip()
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".jinja2", delete=False
+        ) as temp_file:
+            temp_file.write(template_content)
+            temp_file_path = temp_file.name
+
+        yield temp_file_path
+
+        if os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_init_with_valid_file(self, mock_rkllm_class, temp_model_file):
+        """Test ModelManager initialization with a valid model file."""
+        manager = ModelManager(
+            model_path=temp_model_file,
+            platform="rk3588",
+            lib_path="/dummy/lib.so",
+            model_timeout=300,
+        )
+
+        # Test that model name is derived from filename
+        expected_name = Path(temp_model_file).stem
+        assert manager.model_name == expected_name
+
+        # Test that model path is stored correctly
+        assert str(manager.model_path) == temp_model_file
+
+        # Test available models
+        available = manager.get_available_models()
+        assert available == {expected_name}
+
+        manager.shutdown()
+
+    def test_init_with_invalid_file(self):
+        """Test ModelManager initialization with invalid file."""
+        with pytest.raises(ValueError, match="Model file does not exist"):
+            ModelManager(
+                model_path="/nonexistent/model.rkllm",
                 platform="rk3588",
-                lib_path="/tmp/librkllm.so",
-                allowed_models=allowed_models,
-                model_timeout=60,
+                lib_path="/dummy/lib.so",
             )
 
-            available = manager.get_available_models()
-            assert "model1" in available
-            assert "model2" in available
-            assert "model3" in available
-
-            # No models should be loaded initially
-            assert len(manager.get_loaded_models()) == 0
-
-            manager.shutdown()
-
-    def test_model_loading(self, temp_model_dir, mock_rkllm):
-        """Test loading models on demand."""
-        allowed_models = {"model1", "model2"}
-
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_init_with_chat_template(
+        self, mock_rkllm_class, temp_model_file, temp_chat_template
+    ):
+        """Test ModelManager initialization with chat template."""
         manager = ModelManager(
-            model_dir=temp_model_dir,
+            model_path=temp_model_file,
             platform="rk3588",
-            lib_path="/tmp/librkllm.so",
-            allowed_models=allowed_models,
-            model_timeout=60,
+            lib_path="/dummy/lib.so",
+            chat_template=temp_chat_template,
         )
 
-        try:
-            # Load model1
-            model = manager.get_model("model1")
-            assert model is not None
-            assert manager.is_model_loaded("model1")
-            assert "model1" in manager.get_loaded_models()
+        assert manager.chat_template == temp_chat_template
+        manager.shutdown()
 
-            # Get same model again (should return cached instance)
-            model2 = manager.get_model("model1")
-            assert model is model2
-
-        finally:
-            manager.shutdown()
-
-    def test_model_unloading(self, temp_model_dir, mock_rkllm):
-        """Test model unloading when switching models."""
-        allowed_models = {"model1", "model2"}
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_get_model_success(self, mock_rkllm_class, temp_model_file):
+        """Test successful model loading."""
+        mock_model = MagicMock()
+        mock_rkllm_class.return_value = mock_model
 
         manager = ModelManager(
-            model_dir=temp_model_dir,
-            platform="rk3588",
-            lib_path="/tmp/librkllm.so",
-            allowed_models=allowed_models,
-            model_timeout=60,
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
         )
 
-        try:
-            # Load model1
-            model1 = manager.get_model("model1")
-            assert manager.is_model_loaded("model1")
+        model_name = manager.model_name
+        loaded_model = manager.get_model(model_name)
 
-            # Load model2 (should unload model1)
-            model2 = manager.get_model("model2")
-            assert manager.is_model_loaded("model2")
-            assert not manager.is_model_loaded("model1")
-            assert model1.released
+        # Verify the model was loaded correctly
+        assert loaded_model == mock_model
+        mock_rkllm_class.assert_called_once_with(
+            temp_model_file, "rk3588", "/dummy/lib.so"
+        )
 
-        finally:
-            manager.shutdown()
+        # Verify model is tracked as loaded
+        assert manager.is_model_loaded(model_name)
+        assert model_name in manager.get_loaded_models()
 
-    def test_invalid_model(self, temp_model_dir, mock_rkllm):
-        """Test handling of invalid model requests."""
-        allowed_models = {"model1"}
+        manager.shutdown()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_get_model_with_chat_template(
+        self, mock_rkllm_class, temp_model_file, temp_chat_template
+    ):
+        """Test model loading with chat template application."""
+        mock_model = MagicMock()
+        mock_rkllm_class.return_value = mock_model
 
         manager = ModelManager(
-            model_dir=temp_model_dir,
+            model_path=temp_model_file,
             platform="rk3588",
-            lib_path="/tmp/librkllm.so",
-            allowed_models=allowed_models,
-            model_timeout=60,
+            lib_path="/dummy/lib.so",
+            chat_template=temp_chat_template,
         )
 
-        try:
-            # Try to load model not in allowlist
-            with pytest.raises(ValueError, match="not in allowlist"):
-                manager.get_model("invalid_model")
+        model_name = manager.model_name
+        loaded_model = manager.get_model(model_name)
 
-            # Try to load model that doesn't exist
-            allowed_models.add("nonexistent")
-            manager.allowed_models = allowed_models
-            with pytest.raises(ValueError, match="not found in model directory"):
-                manager.get_model("nonexistent")
+        # Verify chat template was applied
+        mock_model.load_chat_template_from_file.assert_called_once_with(
+            temp_chat_template
+        )
 
-        finally:
-            manager.shutdown()
+        manager.shutdown()
 
-    def test_timeout_unloading(self, temp_model_dir, mock_rkllm):
-        """Test automatic model unloading after timeout."""
-        allowed_models = {"model1"}
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_get_model_wrong_name(self, mock_rkllm_class, temp_model_file):
+        """Test error when requesting wrong model name."""
+        manager = ModelManager(
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
+        )
+
+        with pytest.raises(ValueError, match="not available"):
+            manager.get_model("wrong-model-name")
+
+        manager.shutdown()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_model_caching(self, mock_rkllm_class, temp_model_file):
+        """Test that models are cached and not reloaded."""
+        mock_model = MagicMock()
+        mock_rkllm_class.return_value = mock_model
 
         manager = ModelManager(
-            model_dir=temp_model_dir,
-            platform="rk3588",
-            lib_path="/tmp/librkllm.so",
-            allowed_models=allowed_models,
-            model_timeout=1,  # Very short timeout for testing
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
         )
 
-        try:
-            # Load model
-            model = manager.get_model("model1")
-            assert manager.is_model_loaded("model1")
+        model_name = manager.model_name
 
-            # Wait for timeout + cleanup cycle
-            time.sleep(2)
+        # Load model twice
+        model1 = manager.get_model(model_name)
+        model2 = manager.get_model(model_name)
 
-            # Model should be unloaded due to timeout
-            # Note: This test might be flaky due to timing
+        # Should be the same instance (cached)
+        assert model1 is model2
 
-        finally:
-            manager.shutdown()
+        # RKLLM should only be called once
+        mock_rkllm_class.assert_called_once()
 
-    def test_preload_model(self, temp_model_dir, mock_rkllm):
-        """Test preloading models."""
-        allowed_models = {"model1"}
+        manager.shutdown()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_model_loading_failure(self, mock_rkllm_class, temp_model_file):
+        """Test handling of model loading failure."""
+        mock_rkllm_class.side_effect = Exception("Failed to load model")
 
         manager = ModelManager(
-            model_dir=temp_model_dir,
-            platform="rk3588",
-            lib_path="/tmp/librkllm.so",
-            allowed_models=allowed_models,
-            model_timeout=60,
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
         )
 
-        try:
-            # Preload model
-            manager.preload_model("model1")
-            assert manager.is_model_loaded("model1")
+        model_name = manager.model_name
 
-        finally:
-            manager.shutdown()
+        with pytest.raises(Exception, match="Failed to load model"):
+            manager.get_model(model_name)
 
-    def test_unload_all_models(self, temp_model_dir, mock_rkllm):
+        # Model should not be tracked as loaded
+        assert not manager.is_model_loaded(model_name)
+        assert len(manager.get_loaded_models()) == 0
+
+        manager.shutdown()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_preload_model(self, mock_rkllm_class, temp_model_file):
+        """Test preloading a model."""
+        mock_model = MagicMock()
+        mock_rkllm_class.return_value = mock_model
+
+        manager = ModelManager(
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
+        )
+
+        model_name = manager.model_name
+
+        # Preload model
+        manager.preload_model(model_name)
+
+        # Model should be loaded
+        assert manager.is_model_loaded(model_name)
+        mock_rkllm_class.assert_called_once()
+
+        manager.shutdown()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_unload_all_models(self, mock_rkllm_class, temp_model_file):
         """Test unloading all models."""
-        allowed_models = {"model1", "model2"}
+        mock_model = MagicMock()
+        mock_rkllm_class.return_value = mock_model
 
         manager = ModelManager(
-            model_dir=temp_model_dir,
-            platform="rk3588",
-            lib_path="/tmp/librkllm.so",
-            allowed_models=allowed_models,
-            model_timeout=60,
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
         )
 
-        try:
-            # Load both models separately (second will unload first)
-            model1 = manager.get_model("model1")
-            model2 = manager.get_model("model2")
+        model_name = manager.model_name
 
-            assert manager.is_model_loaded("model2")
+        # Load model
+        manager.get_model(model_name)
+        assert manager.is_model_loaded(model_name)
 
-            # Unload all
-            manager.unload_all_models()
-            assert len(manager.get_loaded_models()) == 0
-            assert model2.released
+        # Unload all models
+        manager.unload_all_models()
 
-        finally:
-            manager.shutdown()
+        # Model should no longer be loaded
+        assert not manager.is_model_loaded(model_name)
+        assert len(manager.get_loaded_models()) == 0
 
-    def test_model_info(self, temp_model_dir, mock_rkllm):
-        """Test getting model information."""
-        allowed_models = {"model1", "model2"}
+        # Release should have been called
+        mock_model.release.assert_called_once()
 
+        manager.shutdown()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_model_timeout_cleanup(self, mock_rkllm_class, temp_model_file):
+        """Test automatic model cleanup after timeout."""
+        mock_model = MagicMock()
+        mock_rkllm_class.return_value = mock_model
+
+        # Use very short timeout for testing
         manager = ModelManager(
-            model_dir=temp_model_dir,
+            model_path=temp_model_file,
             platform="rk3588",
-            lib_path="/tmp/librkllm.so",
-            allowed_models=allowed_models,
-            model_timeout=60,
+            lib_path="/dummy/lib.so",
+            model_timeout=1,  # 1 second
         )
 
-        try:
-            # Get info before loading
-            info = manager.get_model_info()
-            assert "model1" in info
-            assert info["model1"]["available"] is True
-            assert info["model1"]["loaded"] is False
+        model_name = manager.model_name
 
-            # Load model and check info again
-            manager.get_model("model1")
-            info = manager.get_model_info()
-            assert info["model1"]["loaded"] is True
-            assert info["model1"]["last_used"] is not None
+        # Load model
+        manager.get_model(model_name)
+        assert manager.is_model_loaded(model_name)
 
-        finally:
-            manager.shutdown()
+        # Wait for timeout
+        time.sleep(2)
 
-    def test_context_manager(self, temp_model_dir, mock_rkllm):
-        """Test using ModelManager as context manager."""
-        allowed_models = {"model1"}
+        # Give cleanup thread time to run
+        time.sleep(1)
 
-        with ModelManager(
-            model_dir=temp_model_dir,
-            platform="rk3588",
-            lib_path="/tmp/librkllm.so",
-            allowed_models=allowed_models,
-            model_timeout=60,
-        ) as manager:
-            model = manager.get_model("model1")
-            assert model is not None
+        # Model should be unloaded
+        assert not manager.is_model_loaded(model_name)
 
-        # Manager should be shut down automatically
+        manager.shutdown()
 
-    def test_extend_timeout(self, temp_model_dir, mock_rkllm):
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_extend_model_timeout(self, mock_rkllm_class, temp_model_file):
         """Test extending model timeout."""
-        allowed_models = {"model1"}
+        mock_model = MagicMock()
+        mock_rkllm_class.return_value = mock_model
 
         manager = ModelManager(
-            model_dir=temp_model_dir,
-            platform="rk3588",
-            lib_path="/tmp/librkllm.so",
-            allowed_models=allowed_models,
-            model_timeout=60,
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
         )
 
-        try:
-            # Load model
-            manager.get_model("model1")
-            original_time = manager._last_used["model1"]
+        model_name = manager.model_name
 
-            time.sleep(0.1)  # Small delay
+        # Load model and get initial timestamp
+        manager.get_model(model_name)
+        original_time = manager._last_used[model_name]
 
-            # Extend timeout
-            manager.extend_model_timeout("model1")
-            new_time = manager._last_used["model1"]
+        time.sleep(0.1)  # Small delay
 
-            assert new_time > original_time
+        # Extend timeout
+        manager.extend_model_timeout(model_name)
+        new_time = manager._last_used[model_name]
 
-        finally:
-            manager.shutdown()
+        assert new_time > original_time
 
+        manager.shutdown()
 
-class TestModelManagerThreadSafety:
-    """Test thread safety of ModelManager."""
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_extend_timeout_wrong_model(self, mock_rkllm_class, temp_model_file):
+        """Test error when extending timeout for wrong model."""
+        manager = ModelManager(
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
+        )
 
-    def test_concurrent_access(self, temp_model_dir, mock_rkllm):
-        """Test concurrent access to models."""
-        allowed_models = {"model1"}
+        with pytest.raises(ValueError, match="not available"):
+            manager.extend_model_timeout("wrong-model")
+
+        manager.shutdown()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_get_model_info(self, mock_rkllm_class, temp_model_file):
+        """Test getting model information."""
+        mock_model = MagicMock()
+        mock_rkllm_class.return_value = mock_model
 
         manager = ModelManager(
-            model_dir=temp_model_dir,
-            platform="rk3588",
-            lib_path="/tmp/librkllm.so",
-            allowed_models=allowed_models,
-            model_timeout=60,
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
         )
 
+        model_name = manager.model_name
+
+        # Get info before loading
+        info = manager.get_model_info()
+        assert model_name in info
+        assert info[model_name]["available"] is True
+        assert info[model_name]["loaded"] is False
+        assert info[model_name]["path"] == temp_model_file
+
+        # Load model and check info again
+        manager.get_model(model_name)
+        info = manager.get_model_info()
+        assert info[model_name]["loaded"] is True
+        assert info[model_name]["last_used"] is not None
+
+        manager.shutdown()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_load_chat_template_loaded_model(
+        self, mock_rkllm_class, temp_model_file, temp_chat_template
+    ):
+        """Test loading chat template for an already loaded model."""
+        mock_model = MagicMock()
+        mock_rkllm_class.return_value = mock_model
+
+        manager = ModelManager(
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
+        )
+
+        model_name = manager.model_name
+
+        # Load model first
+        manager.get_model(model_name)
+
+        # Load chat template
+        manager.load_chat_template(model_name, temp_chat_template)
+
+        # Verify template was loaded
+        mock_model.load_chat_template_from_file.assert_called_with(temp_chat_template)
+
+        manager.shutdown()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_load_chat_template_wrong_model(
+        self, mock_rkllm_class, temp_model_file, temp_chat_template
+    ):
+        """Test error when loading chat template for wrong model."""
+        manager = ModelManager(
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
+        )
+
+        with pytest.raises(ValueError, match="not available"):
+            manager.load_chat_template("wrong-model", temp_chat_template)
+
+        manager.shutdown()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_cleanup_thread_lifecycle(self, mock_rkllm_class, temp_model_file):
+        """Test that cleanup thread starts and stops properly."""
+        manager = ModelManager(
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
+        )
+
+        # Cleanup thread should be started
+        assert manager._cleanup_thread is not None
+        assert manager._cleanup_thread.is_alive()
+
+        # Shutdown should stop the thread
+        manager.shutdown()
+
+        # Give thread time to stop
+        time.sleep(0.5)
+        assert not manager._cleanup_thread.is_alive()
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_thread_safety(self, mock_rkllm_class, temp_model_file):
+        """Test that ModelManager is thread-safe."""
+        mock_model = MagicMock()
+        mock_rkllm_class.return_value = mock_model
+
+        manager = ModelManager(
+            model_path=temp_model_file, platform="rk3588", lib_path="/dummy/lib.so"
+        )
+
+        model_name = manager.model_name
         results = []
         errors = []
 
-        def worker():
+        def load_model():
             try:
-                model = manager.get_model("model1")
+                model = manager.get_model(model_name)
                 results.append(model)
             except Exception as e:
                 errors.append(e)
 
-        try:
-            # Start multiple threads
-            threads = [threading.Thread(target=worker) for _ in range(10)]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join()
+        # Start multiple threads loading the same model
+        threads = []
+        for _ in range(10):
+            thread = threading.Thread(target=load_model)
+            threads.append(thread)
+            thread.start()
 
-            # Should have no errors and all results should be the same model instance
-            assert len(errors) == 0
-            assert len(results) == 10
-            assert all(r is results[0] for r in results)
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
 
-        finally:
-            manager.shutdown()
+        # Should have no errors and all results should be the same instance
+        assert len(errors) == 0
+        assert len(results) == 10
+        assert all(result is results[0] for result in results)
+
+        # RKLLM should only be called once (model cached)
+        mock_rkllm_class.assert_called_once()
+
+        manager.shutdown()
+
+    def test_model_name_extraction(self, temp_model_file):
+        """Test that model names are correctly extracted from file paths."""
+        # Test with different file extensions
+        test_cases = [
+            ("/path/to/model.rkllm", "model"),
+            ("/path/to/my-awesome-model.rkllm", "my-awesome-model"),
+            ("/path/to/model_v2.bin", "model_v2"),
+        ]
+
+        for file_path, expected_name in test_cases:
+            # Create temporary file with specific name
+            temp_dir = Path(temp_model_file).parent
+            test_file = temp_dir / Path(file_path).name
+            test_file.write_bytes(b"dummy content")
+
+            try:
+                manager = ModelManager(
+                    model_path=str(test_file),
+                    platform="rk3588",
+                    lib_path="/dummy/lib.so",
+                )
+
+                assert manager.model_name == expected_name
+                manager.shutdown()
+            finally:
+                if test_file.exists():
+                    test_file.unlink()
