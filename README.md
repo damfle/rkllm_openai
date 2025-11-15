@@ -2,6 +2,8 @@
 
 A high-performance OpenAI-compatible API server for RKLLM (Rockchip Large Language Model) with multi-model support, lazy loading, and automatic resource management.
 
+> **Note**: This project is based on [RKNN-LLM](https://github.com/airockchip/rknn-llm) by Rockchip. It provides an OpenAI-compatible API layer for RKLLM models with enhanced multi-model support and resource management.
+
 ## Features
 
 - **OpenAI API Compatibility**: Drop-in replacement for OpenAI API endpoints
@@ -388,12 +390,13 @@ mypy rkllm_openai/
 
 ## License
 
-MIT License - see LICENSE file for details.
+ISC License - see LICENSE file for details.
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/damfle/rkllm_openai/issues)
 - **Documentation**: [GitHub Repository](https://github.com/damfle/rkllm_openai)
+- **Original RKNN-LLM**: [Rockchip RKNN-LLM Repository](https://github.com/airockchip/rknn-llm)
 - **Community**: [Rockchip Developer Community](https://developer.rock-chips.com/)
 
 ## Changelog
