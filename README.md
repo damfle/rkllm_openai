@@ -1,0 +1,408 @@
+# RKLLM OpenAI API Server
+
+A high-performance OpenAI-compatible API server for RKLLM (Rockchip Large Language Model) with multi-model support, lazy loading, and automatic resource management.
+
+## Features
+
+- **OpenAI API Compatibility**: Drop-in replacement for OpenAI API endpoints
+- **Multi-Model Support**: Load and manage multiple models from a single directory
+- **Lazy Loading**: Models are loaded only when requested, optimizing memory usage
+- **Automatic Unloading**: Smart resource management with configurable timeouts
+- **Thread-Safe**: Concurrent request handling with proper locking
+- **Streaming Support**: Real-time streaming for chat completions and text generation
+- **Tool/Function Calling**: Support for OpenAI-style function calling
+- **Embeddings**: Generate text embeddings using RKLLM models
+
+## Supported Endpoints
+
+- `GET /health` - Health check
+- `GET /v1/models` - List available models
+- `GET /v1/models/{model_id}` - Get specific model info
+- `POST /v1/chat/completions` - Chat completions (with streaming support)
+- `POST /v1/completions` - Text completions (with streaming support)
+- `POST /v1/embeddings` - Generate embeddings
+
+## Installation
+
+### From Source
+
+```bash
+git clone https://github.com/damfle/rkllm_openai.git
+cd rkllm_openai
+pip install -e .
+```
+
+### With Test Dependencies
+
+```bash
+pip install -e .[test]
+```
+
+### With Development Dependencies
+
+```bash
+pip install -e .[dev]
+```
+
+## Quick Start
+
+### 1. Prepare Your Models
+
+Organize your RKLLM model files in a directory:
+
+```
+/path/to/models/
+├── model1.rkllm
+├── model2.bin
+├── model3/
+│   └── model.rkllm
+└── chat_template.jinja2
+```
+
+### 2. Start the Server
+
+```bash
+rkllm-openai-server \
+  --model-path /path/to/models \
+  --lib-path /path/to/librkllm.so \
+  --models-allowlist model1 model2 model3 \
+  --platform rk3588 \
+  --host 0.0.0.0 \
+  --port 8080
+```
+
+### 3. Use with OpenAI Client
+
+```python
+from openai import OpenAI
+
+# Initialize client
+client = OpenAI(
+    api_key="dummy-key",  # Not required but for compatibility
+    base_url="http://localhost:8080/v1"
+)
+
+# Chat completion
+response = client.chat.completions.create(
+    model="model1",
+    messages=[
+        {"role": "user", "content": "Hello, how are you?"}
+    ],
+    max_tokens=100
+)
+
+print(response.choices[0].message.content)
+```
+
+## Server Configuration
+
+### Command Line Arguments
+
+| Argument | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `--model-path` | Directory containing model files | Yes | - |
+| `--lib-path` | Path to RKLLM library (.so file) | Yes | - |
+| `--models-allowlist` | List of allowed model names | Yes | - |
+| `--platform` | Target platform (rk3588, rk3576) | No | rk3588 |
+| `--host` | Server host address | No | 127.0.0.1 |
+| `--port` | Server port | No | 8000 |
+| `--model-timeout` | Model unload timeout (seconds) | No | 300 |
+| `--chat-template` | Path to chat template file | No | - |
+
+### Example Usage
+
+```bash
+# Basic usage
+rkllm-openai-server \
+  --model-path ./models \
+  --lib-path ./lib/librkllm.so \
+  --models-allowlist llama2-7b qwen-7b \
+  --platform rk3588
+
+# Advanced configuration
+rkllm-openai-server \
+  --model-path /data/models \
+  --lib-path /usr/lib/librkllm.so \
+  --models-allowlist llama2-7b llama2-13b qwen-7b qwen-14b \
+  --platform rk3588 \
+  --host 0.0.0.0 \
+  --port 8080 \
+  --model-timeout 600 \
+  --chat-template ./templates/chat.jinja2
+```
+
+## Model Management
+
+### Directory Structure
+
+The server discovers models in the specified directory using these patterns:
+
+1. **Direct files**: `model_name.rkllm`, `model_name.bin`, `model_name`
+2. **Subdirectories**: `model_name/model.rkllm`, `model_name/model.bin`
+
+### Lazy Loading Behavior
+
+- Models are **not loaded** at server startup
+- Models are **loaded on first request** for that model
+- Only **one model is kept in memory** at a time
+- Models are **automatically unloaded** after the timeout period
+- Requesting a different model **immediately unloads** the current model
+
+### Memory Management
+
+The server optimizes memory usage by:
+
+- Loading models only when needed
+- Unloading inactive models after a configurable timeout
+- Switching models by unloading the previous one
+- Proper cleanup on server shutdown
+
+## API Usage Examples
+
+### Chat Completion
+
+```python
+import openai
+
+client = openai.OpenAI(base_url="http://localhost:8080/v1", api_key="dummy")
+
+# Basic chat
+response = client.chat.completions.create(
+    model="llama2-7b",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is the capital of France?"}
+    ],
+    max_tokens=50,
+    temperature=0.7
+)
+
+# Streaming chat
+stream = client.chat.completions.create(
+    model="llama2-7b",
+    messages=[{"role": "user", "content": "Tell me a story"}],
+    max_tokens=200,
+    stream=True
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+```
+
+### Function Calling
+
+```python
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get weather information",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string", "description": "City name"}
+                },
+                "required": ["location"]
+            }
+        }
+    }
+]
+
+response = client.chat.completions.create(
+    model="qwen-7b",
+    messages=[{"role": "user", "content": "What's the weather in Paris?"}],
+    tools=tools,
+    max_tokens=100
+)
+```
+
+### Text Completion
+
+```python
+response = client.completions.create(
+    model="llama2-7b",
+    prompt="The future of AI is",
+    max_tokens=100,
+    temperature=0.8
+)
+
+print(response.choices[0].text)
+```
+
+### Embeddings
+
+```python
+response = client.embeddings.create(
+    model="llama2-7b",
+    input=["Hello world", "How are you?"]
+)
+
+embeddings = [data.embedding for data in response.data]
+```
+
+## Testing
+
+### Run Basic Tests
+
+```bash
+cd tests
+python test_basic.py
+```
+
+### Run with pytest (requires installation)
+
+```bash
+# Install test dependencies
+pip install -e .[test]
+
+# Run all tests
+python tests/run_tests.py
+
+# Or use pytest directly
+pytest tests/ -v
+```
+
+### Test with External Server
+
+```bash
+# Start server in one terminal
+rkllm-openai-server --model-path ./models --lib-path ./lib/librkllm.so --models-allowlist test-model
+
+# Run tests in another terminal
+RKLLM_SKIP_SERVER_START=true RKLLM_TEST_BASE_URL=http://localhost:8000 pytest tests/test_server_integration.py -v
+```
+
+## Monitoring and Health Checks
+
+### Health Endpoint
+
+```bash
+curl http://localhost:8080/health
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "timestamp": 1699123456
+}
+```
+
+### Model Status
+
+```bash
+curl http://localhost:8080/v1/models
+```
+
+Response:
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "llama2-7b",
+      "object": "model",
+      "created": 1699123456,
+      "owned_by": "rkllm"
+    }
+  ]
+}
+```
+
+## Performance Optimization
+
+### Memory Usage
+
+- Use `--model-timeout` to control how long models stay in memory
+- Shorter timeouts = lower memory usage, but more loading overhead
+- Longer timeouts = higher memory usage, but faster response times
+
+### Recommended Settings
+
+```bash
+# For development (quick model switching)
+--model-timeout 60
+
+# For production (stable workload)
+--model-timeout 1800  # 30 minutes
+
+# For memory-constrained systems
+--model-timeout 300   # 5 minutes
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Model not found**: Ensure model files are in the correct directory and match the allowlist names
+2. **Library not found**: Verify the `--lib-path` points to the correct RKLLM library file
+3. **Permission errors**: Ensure the server has read access to model files and library
+4. **Memory issues**: Reduce `--model-timeout` or ensure sufficient system memory
+
+### Debug Mode
+
+Enable debug logging by setting environment variable:
+
+```bash
+export FLASK_ENV=development
+rkllm-openai-server ...
+```
+
+### Logs
+
+The server provides detailed logging for:
+- Model loading/unloading events
+- Request processing
+- Error conditions
+- Performance metrics
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Run the test suite
+6. Submit a pull request
+
+### Development Setup
+
+```bash
+# Clone and install in development mode
+git clone https://github.com/damfle/rkllm_openai.git
+cd rkllm_openai
+pip install -e .[dev]
+
+# Run tests
+python tests/test_basic.py
+
+# Format code
+black .
+isort .
+
+# Type checking
+mypy rkllm_openai/
+```
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/damfle/rkllm_openai/issues)
+- **Documentation**: [GitHub Repository](https://github.com/damfle/rkllm_openai)
+- **Community**: [Rockchip Developer Community](https://developer.rock-chips.com/)
+
+## Changelog
+
+### v0.1.0
+
+- Initial release with OpenAI API compatibility
+- Multi-model support with lazy loading
+- Automatic resource management
+- Comprehensive test suite
+- Docker support
+- Function calling support

@@ -1,0 +1,93 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rkllm-openai"
+version = "0.1.0"
+description = "OpenAI-compatible API server for RKLLM models with multi-model support and lazy loading"
+authors = [{name = "RKLLM OpenAI Contributors"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["llm", "rkllm", "openai", "api", "inference", "rockchip"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Intended Audience :: Science/Research",
+    "Environment :: Web Environment",
+]
+dependencies = [
+    "flask>=2.0.0",
+    "flask-cors>=4.0.0",
+    "numpy>=1.21.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "openai>=1.0.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "requests>=2.25.0",
+]
+dev = [
+    "openai>=1.0.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "requests>=2.25.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+rkllm-openai-server = "rkllm_openai.server:main"
+
+[project.urls]
+Homepage = "https://github.com/damfle/rkllm_openai"
+Repository = "https://github.com/damfle/rkllm_openai"
+Issues = "https://github.com/damfle/rkllm_openai/issues"
+Documentation = "https://github.com/damfle/rkllm_openai/blob/main/README.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rkllm_openai*"]
+
+[tool.setuptools.package-data]
+rkllm_openai = ["*.so", "lib/*.so", "*.jinja2"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
