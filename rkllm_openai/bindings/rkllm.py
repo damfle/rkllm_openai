@@ -228,6 +228,18 @@ class RKLLM:
                 ctypes.c_char_p(tool_response_str.encode("utf-8")),
             )
 
+    def clear_tools(self):
+        """Clear any previously set tools from the model."""
+        if self.tools is not None:
+            self.tools = None
+            # Reset tools by passing empty strings
+            self.set_function_tools_internal(
+                self.handle,
+                ctypes.c_char_p(b""),
+                ctypes.c_char_p(b""),
+                ctypes.c_char_p(b""),
+            )
+
     def apply_chat_template(
         self,
         system_prompt: str = None,

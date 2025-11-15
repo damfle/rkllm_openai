@@ -12,7 +12,15 @@ from .models import (
     ToolCall,
     ToolFunction,
 )
-from .tool_utils import clean_content_for_tools, parse_tool_calls
+from .tool_utils import (
+    clean_content_for_tools,
+    convert_openai_tools_to_rkllm_format,
+    format_tools_for_prompt,
+    get_forced_tool_name,
+    get_system_prompt_with_tools,
+    parse_tool_calls,
+    should_force_tool_use,
+)
 
 # Conditionally import response generators to avoid Flask dependency issues
 try:
@@ -39,6 +47,11 @@ __all__ = [
     # Tool utilities
     "parse_tool_calls",
     "clean_content_for_tools",
+    "convert_openai_tools_to_rkllm_format",
+    "format_tools_for_prompt",
+    "get_system_prompt_with_tools",
+    "should_force_tool_use",
+    "get_forced_tool_name",
 ]
 
 # Add response generators to __all__ if available

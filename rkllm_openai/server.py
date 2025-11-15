@@ -25,6 +25,9 @@ from .commons import (
     ChatCompletionRequest,
     CompletionRequest,
     EmbeddingRequest,
+    convert_openai_tools_to_rkllm_format,
+    get_system_prompt_with_tools,
+    should_force_tool_use,
 )
 from .model_manager import ModelManager
 
@@ -133,11 +136,42 @@ def create_app():
                         400,
                     )
 
+                # Handle tools if provided
+                if req.tools:
+                    # Convert OpenAI tools to RKLLM format
+                    tools_json = convert_openai_tools_to_rkllm_format(req.tools)
+
+                    # Extract system prompt for tool configuration
+                    system_prompt = "You are a helpful assistant."
+                    enhanced_system_prompt = get_system_prompt_with_tools(
+                        system_prompt, req.tools
+                    )
+
+                    # Configure model with tools
+                    current_model.set_function_tools(
+                        system_prompt=enhanced_system_prompt,
+                        tools=tools_json,
+                        tool_response_str="tool_response",
+                    )
+                else:
+                    # Clear any previously set tools if no tools in this request
+                    current_model.clear_tools()
+
                 # Convert messages to prompt
                 prompt_parts = []
+                system_message_found = False
+
                 for message in req.messages:
                     if message.role == "system":
-                        prompt_parts.append(f"System: {message.content}")
+                        system_message_found = True
+                        # If tools are provided, enhance the system message
+                        if req.tools:
+                            enhanced_content = get_system_prompt_with_tools(
+                                message.content, req.tools
+                            )
+                            prompt_parts.append(f"System: {enhanced_content}")
+                        else:
+                            prompt_parts.append(f"System: {message.content}")
                     elif message.role == "user":
                         prompt_parts.append(f"User: {message.content}")
                     elif message.role == "assistant":
@@ -145,6 +179,13 @@ def create_app():
                             prompt_parts.append(f"Assistant: {message.content}")
                     elif message.role == "tool":
                         prompt_parts.append(f"Tool response: {message.content}")
+
+                # If no system message but tools are provided, add enhanced system message
+                if req.tools and not system_message_found:
+                    enhanced_system = get_system_prompt_with_tools(
+                        "You are a helpful assistant.", req.tools
+                    )
+                    prompt_parts.insert(0, f"System: {enhanced_system}")
 
                 prompt = "\n".join(prompt_parts) + "\nAssistant:"
 

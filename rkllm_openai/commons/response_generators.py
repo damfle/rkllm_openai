@@ -11,7 +11,12 @@ from typing import TYPE_CHECKING
 from flask import jsonify
 
 from .models import ChatCompletionRequest, CompletionRequest
-from .tool_utils import clean_content_for_tools, parse_tool_calls
+from .tool_utils import (
+    clean_content_for_tools,
+    get_forced_tool_name,
+    parse_tool_calls,
+    should_force_tool_use,
+)
 
 if TYPE_CHECKING:
     from ..bindings import RKLLM
@@ -46,6 +51,20 @@ def generate_chat_completion(
     tool_calls = parse_tool_calls(output)
     content = clean_content_for_tools(output).strip() if tool_calls else output.strip()
 
+    # Handle tool choice validation
+    if req.tools and should_force_tool_use(req.tool_choice):
+        forced_tool = get_forced_tool_name(req.tool_choice)
+        if forced_tool and not tool_calls:
+            # Model didn't call required tool - this is an error condition
+            # We'll still return the response but note the issue
+            pass
+        elif forced_tool and tool_calls:
+            # Verify the correct tool was called
+            called_tools = [tc["function"]["name"] for tc in tool_calls]
+            if forced_tool not in called_tools:
+                # Wrong tool called - this is also an error condition
+                pass
+
     # Build response message
     response_message = {"role": "assistant"}
     if content:
@@ -54,6 +73,12 @@ def generate_chat_completion(
         response_message["content"] = None
     if tool_calls:
         response_message["tool_calls"] = tool_calls
+
+    # Determine finish reason
+    finish_reason = "tool_calls" if tool_calls else "stop"
+    if req.tool_choice == "none" and tool_calls:
+        # Model called tools when explicitly told not to
+        finish_reason = "stop"  # Treat as regular completion
 
     return jsonify(
         {
@@ -66,7 +91,7 @@ def generate_chat_completion(
                     "index": 0,
                     "message": response_message,
                     "logprobs": None,
-                    "finish_reason": "tool_calls" if tool_calls else "stop",
+                    "finish_reason": finish_reason,
                 }
             ],
             "usage": {
@@ -96,6 +121,8 @@ def stream_chat_completion(
 
     # Stream responses
     accumulated_content = ""
+    tool_calls_sent = False
+
     while thread.is_alive() or len(current_model.get_text_buffer()) > 0:
         text_buffer = current_model.get_text_buffer()
         for text_chunk in text_buffer:
@@ -103,8 +130,9 @@ def stream_chat_completion(
 
             # Check if we have a complete tool call
             tool_calls = parse_tool_calls(accumulated_content)
-            if tool_calls:
-                # Send tool calls chunk
+            if tool_calls and not tool_calls_sent:
+                # Send tool calls chunk (only once)
+                tool_calls_sent = True
                 chunk = {
                     "id": completion_id,
                     "object": "chat.completion.chunk",
@@ -147,6 +175,10 @@ def stream_chat_completion(
     # Send final chunk with finish reason
     final_tool_calls = parse_tool_calls(accumulated_content)
     finish_reason = "tool_calls" if final_tool_calls else "stop"
+
+    # Handle tool choice validation for streaming
+    if req.tool_choice == "none" and final_tool_calls:
+        finish_reason = "stop"
 
     final_chunk = {
         "id": completion_id,

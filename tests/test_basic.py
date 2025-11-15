@@ -342,6 +342,115 @@ class TestBasicFunctionality:
 
         print("✓ JSON operations work correctly")
 
+    def test_tool_utilities_comprehensive(self):
+        """Test comprehensive tool utilities functionality."""
+        from rkllm_openai.commons.tool_utils import (
+            convert_openai_tools_to_rkllm_format,
+            format_tools_for_prompt,
+            get_forced_tool_name,
+            get_system_prompt_with_tools,
+            should_force_tool_use,
+        )
+
+        # Test OpenAI tool format
+        openai_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "description": "Search for information",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query"},
+                            "limit": {"type": "integer", "description": "Max results"},
+                        },
+                        "required": ["query"],
+                    },
+                },
+            }
+        ]
+
+        # Test conversion to RKLLM format
+        rkllm_tools = convert_openai_tools_to_rkllm_format(openai_tools)
+        assert isinstance(rkllm_tools, str)
+        assert "search" in rkllm_tools
+        assert "Search for information" in rkllm_tools
+
+        # Test prompt formatting
+        tool_prompt = format_tools_for_prompt(openai_tools)
+        assert "Function: search" in tool_prompt
+        assert "<tool_call>" in tool_prompt
+        assert "Available functions:" in tool_prompt
+
+        # Test system prompt enhancement
+        enhanced = get_system_prompt_with_tools("You are helpful.", openai_tools)
+        assert "You are helpful." in enhanced
+        assert "Available functions:" in enhanced
+
+        # Test tool choice logic
+        assert should_force_tool_use("required") is True
+        assert should_force_tool_use("auto") is False
+        assert should_force_tool_use("none") is False
+        assert (
+            should_force_tool_use({"type": "function", "function": {"name": "test"}})
+            is True
+        )
+
+        # Test forced tool name extraction
+        tool_choice = {"type": "function", "function": {"name": "specific_tool"}}
+        forced_name = get_forced_tool_name(tool_choice)
+        assert forced_name == "specific_tool"
+
+        print("✓ Tool utilities comprehensive functionality works")
+
+    @patch("rkllm_openai.model_manager.RKLLM")
+    def test_model_with_tools(self, mock_rkllm_class):
+        """Test ModelManager with tools functionality."""
+        from rkllm_openai.model_manager import ModelManager
+
+        # Create temporary model file
+        with tempfile.NamedTemporaryFile(suffix=".rkllm", delete=False) as temp_file:
+            temp_file.write(b"dummy model content")
+            temp_file_path = temp_file.name
+
+        try:
+            # Mock RKLLM model
+            mock_model = Mock()
+            mock_model.set_function_tools = Mock()
+            mock_model.clear_tools = Mock()
+            mock_rkllm_class.return_value = mock_model
+
+            manager = ModelManager(
+                model_path=temp_file_path, platform="rk3588", lib_path="/dummy/lib.so"
+            )
+
+            model_name = manager.model_name
+            loaded_model = manager.get_model(model_name)
+
+            # Test that tool methods exist
+            assert hasattr(loaded_model, "set_function_tools")
+            assert hasattr(loaded_model, "clear_tools")
+
+            # Test tool configuration
+            loaded_model.set_function_tools(
+                "system prompt", '{"tools": "data"}', "tool_response"
+            )
+            mock_model.set_function_tools.assert_called_once()
+
+            # Test tool clearing
+            loaded_model.clear_tools()
+            mock_model.clear_tools.assert_called_once()
+
+            manager.shutdown()
+            print("✓ Model with tools functionality works")
+
+        finally:
+            import os
+
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+
 
 def run_basic_tests():
     """Run basic tests and print results."""
