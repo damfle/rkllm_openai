@@ -221,6 +221,16 @@ class RKLLM:
         """
         if self.tools is None or self.tools != tools:
             self.tools = tools
+            # Validate tools JSON format
+            if tools and tools != "[]":
+                try:
+                    import json
+
+                    json.loads(tools)  # Validate JSON
+                except json.JSONDecodeError as e:
+                    print(f"Warning: Invalid tools JSON format: {e}")
+                    return
+
             self.set_function_tools_internal(
                 self.handle,
                 ctypes.c_char_p(system_prompt.encode("utf-8")),
@@ -232,12 +242,12 @@ class RKLLM:
         """Clear any previously set tools from the model."""
         if self.tools is not None:
             self.tools = None
-            # Reset tools by passing empty strings
+            # Reset tools by passing empty JSON array
             self.set_function_tools_internal(
                 self.handle,
-                ctypes.c_char_p(b""),
-                ctypes.c_char_p(b""),
-                ctypes.c_char_p(b""),
+                ctypes.c_char_p(b"You are a helpful assistant."),
+                ctypes.c_char_p(b"[]"),
+                ctypes.c_char_p(b"tool_response"),
             )
 
     def apply_chat_template(

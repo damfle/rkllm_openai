@@ -55,7 +55,7 @@ def clean_content_for_tools(content: str) -> str:
 def convert_openai_tools_to_rkllm_format(tools: List[Union[dict, BaseModel]]) -> str:
     """Convert OpenAI tool format to RKLLM-compatible JSON string."""
     if not tools:
-        return ""
+        return "[]"
 
     rkllm_tools = []
     for tool in tools:
@@ -63,14 +63,20 @@ def convert_openai_tools_to_rkllm_format(tools: List[Union[dict, BaseModel]]) ->
         if tool_dict.get("type") == "function":
             function = tool_dict.get("function", {})
             function_dict = _to_dict(function)
-            rkllm_tool = {
-                "name": function_dict.get("name", ""),
-                "description": function_dict.get("description", ""),
-                "parameters": function_dict.get("parameters", {}),
-            }
-            rkllm_tools.append(rkllm_tool)
+            # Only include non-empty values
+            rkllm_tool = {}
+            if function_dict.get("name"):
+                rkllm_tool["name"] = function_dict["name"]
+            if function_dict.get("description"):
+                rkllm_tool["description"] = function_dict["description"]
+            if function_dict.get("parameters"):
+                rkllm_tool["parameters"] = function_dict["parameters"]
 
-    return json.dumps(rkllm_tools)
+            if rkllm_tool:  # Only add if we have actual content
+                rkllm_tools.append(rkllm_tool)
+
+    # Use compact JSON format without spaces
+    return json.dumps(rkllm_tools, separators=(",", ":"), ensure_ascii=True)
 
 
 def format_tools_for_prompt(tools: List[Union[dict, BaseModel]]) -> str:
