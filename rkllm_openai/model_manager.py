@@ -21,7 +21,7 @@ class ModelManager:
         self,
         model_path: str,
         platform: str,
-        lib_path: str,
+        lib_path: Optional[str] = None,
         model_timeout: int = 300,  # 5 minutes default
         chat_template: Optional[str] = None,
     ):
@@ -31,7 +31,7 @@ class ModelManager:
         Args:
             model_path: Path to the RKLLM model file
             platform: Platform identifier (rk3588, rk3576)
-            lib_path: Path to RKLLM library
+            lib_path: Path to RKLLM library (optional, will search common paths)
             model_timeout: Time in seconds before unloading inactive models
             chat_template: Optional path to chat template file
         """

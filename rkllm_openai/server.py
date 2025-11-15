@@ -337,7 +337,10 @@ def main():
     parser.add_argument(
         "--platform", choices=["rk3588", "rk3576"], default="rk3588", help="Platform"
     )
-    parser.add_argument("--lib-path", required=True, help="Path to RKLLM library")
+    parser.add_argument(
+        "--lib-path",
+        help="Path to RKLLM library (optional, will search common paths if not specified)",
+    )
 
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
@@ -362,8 +365,8 @@ def main():
         print(f"Error: Model path must be a file: {args.model_path}")
         sys.exit(1)
 
-    # Validate library path
-    if not os.path.exists(args.lib_path):
+    # Validate library path if provided
+    if args.lib_path and not os.path.exists(args.lib_path):
         print(f"Error: Library file not found: {args.lib_path}")
         sys.exit(1)
 
