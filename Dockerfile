@@ -1,11 +1,12 @@
 # Stage 1: Build stage
-FROM python:3.13-slim as builder
+FROM python:3.12-slim as builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     unzip \
     build-essential \
+    cmake \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -17,11 +18,7 @@ COPY . .
 # Build the package
 RUN pip wheel --no-deps --wheel-dir /build/wheels .
 
-# Fetch RKLLM library from GitHub
-RUN wget -O rknn-llm.zip https://github.com/airockchip/rknn-llm/archive/refs/tags/release-v1.2.2.zip && \
-    unzip rknn-llm.zip && \
-    mkdir -p /build/lib && \
-    cp rknn-llm-release-v1.2.2/rkllm-runtime/Linux/librkllm_api/aarch64/librkllmrt.so /build/lib/
+
 
 # Stage 2: Runtime stage
 FROM python:3.13-slim
@@ -30,7 +27,10 @@ FROM python:3.13-slim
 RUN apt-get update && apt-get install -y \
     libgomp1 \
     nfs-common \
-    nfs-client \
+    wget \
+    unzip \
+    build-essential \
+    cmake \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user
@@ -43,9 +43,16 @@ WORKDIR /app
 COPY --from=builder /build/wheels/*.whl /tmp/
 RUN pip install /tmp/*.whl && rm /tmp/*.whl
 
-# Copy RKLLM library
-COPY --from=builder /build/lib/librkllmrt.so /usr/local/lib/
-RUN ldconfig
+# Fetch and build RKLLM library from GitHub
+RUN wget -O ezrknn-llm.zip https://github.com/Pelochus/ezrknn-llm/archive/refs/heads/main.zip && \
+    unzip ezrknn-llm.zip && \
+    cd ezrknn-llm-main && \
+    chmod +x install.sh && \
+    ./install.sh && \
+    cp build/librkllmrt.so /usr/local/lib/ && \
+    cd .. && \
+    rm -rf ezrknn-llm.zip ezrknn-llm-main && \
+    ldconfig
 
 # Change ownership to app user
 RUN chown -R app:app /app
