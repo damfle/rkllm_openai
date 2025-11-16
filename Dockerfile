@@ -30,6 +30,7 @@ FROM python:3.13-slim
 RUN apt-get update && apt-get install -y \
     libgomp1 \
     nfs-common \
+    nfs-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user
