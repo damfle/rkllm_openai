@@ -29,6 +29,7 @@ FROM python:3.13-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     libgomp1 \
+    nfs-common \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user
