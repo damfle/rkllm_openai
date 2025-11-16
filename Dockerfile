@@ -39,6 +39,12 @@ RUN wget -O rknn-llm.zip https://github.com/airockchip/rknn-llm/archive/refs/tag
 # Stage 2: Runtime stage
 FROM python:3.12-slim
 
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    nfs-common \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create app user
 RUN useradd -m -u 1000 app
 
