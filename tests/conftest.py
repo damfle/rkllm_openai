@@ -89,7 +89,11 @@ class MockRKLLMServer:
     """Mock RKLLM server for testing without actual model loading."""
 
     def __init__(
-        self, model_path: str, lib_path: str = None, host: str = "127.0.0.1", port: int = 0
+        self,
+        model_path: str,
+        lib_path: str = None,
+        host: str = "127.0.0.1",
+        port: int = 0,
     ):
         self.model_path = model_path
         self.lib_path = lib_path
@@ -127,12 +131,14 @@ class MockRKLLMServer:
         if self.lib_path:
             cmd.extend(["--lib-path", self.lib_path])
 
-        cmd.extend([
-            "--host",
-            self.host,
-            "--port",
-            str(self.actual_port),
-        ]
+        cmd.extend(
+            [
+                "--host",
+                self.host,
+                "--port",
+                str(self.actual_port),
+            ]
+        )
 
         self.process = subprocess.Popen(
             cmd,
