@@ -18,20 +18,19 @@ COPY . .
 # Build the package
 RUN pip wheel --no-deps --wheel-dir /build/wheels .
 
+# Fetch and build RKNN toolkit from official repository
+RUN wget -O rknn-toolkit2.zip https://github.com/rockchip-linux/rknn-toolkit2/archive/refs/heads/master.zip && \
+    unzip rknn-toolkit2.zip && \
+    cd rknn-toolkit2-master && \
+    mkdir -p /build/rknn && \
+    cp -r rknpu2/runtime/Linux/librknn_api/aarch64/* /build/rknn/ && \
+    cp -r rknpu2/runtime/Linux/librknn_api/include/* /build/rknn/ && \
+    cd .. && \
+    rm -rf rknn-toolkit2.zip rknn-toolkit2-master
 
 
 # Stage 2: Runtime stage
-FROM python:3.13-slim
-
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    libgomp1 \
-    nfs-common \
-    wget \
-    unzip \
-    build-essential \
-    cmake \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.12-slim
 
 # Create app user
 RUN useradd -m -u 1000 app
@@ -43,15 +42,16 @@ WORKDIR /app
 COPY --from=builder /build/wheels/*.whl /tmp/
 RUN pip install /tmp/*.whl && rm /tmp/*.whl
 
-# Fetch and build RKLLM library from GitHub
-RUN wget -O ezrknn-llm.zip https://github.com/Pelochus/ezrknn-llm/archive/refs/heads/main.zip && \
-    unzip ezrknn-llm.zip && \
-    cd ezrknn-llm-main && \
-    chmod +x install.sh && \
-    ./install.sh && \
-    cd .. && \
-    rm -rf ezrknn-llm.zip ezrknn-llm-main && \
-    ldconfig
+# Copy RKNN libraries from build stage
+COPY --from=builder /build/rknn/*.so /usr/local/lib/
+COPY --from=builder /build/rknn/*.h /usr/local/include/
+RUN ldconfig
+
+# Set file limits like install.sh does
+RUN echo "* soft nofile 16384" >> /etc/security/limits.conf && \
+    echo "* hard nofile 1048576" >> /etc/security/limits.conf && \
+    echo "root soft nofile 16384" >> /etc/security/limits.conf && \
+    echo "root hard nofile 1048576" >> /etc/security/limits.conf
 
 # Change ownership to app user
 RUN chown -R app:app /app
