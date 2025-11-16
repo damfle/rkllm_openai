@@ -49,7 +49,6 @@ RUN wget -O ezrknn-llm.zip https://github.com/Pelochus/ezrknn-llm/archive/refs/h
     cd ezrknn-llm-main && \
     chmod +x install.sh && \
     ./install.sh && \
-    cp build/librkllmrt.so /usr/local/lib/ && \
     cd .. && \
     rm -rf ezrknn-llm.zip ezrknn-llm-main && \
     ldconfig
