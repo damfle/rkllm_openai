@@ -28,6 +28,13 @@ RUN wget -O rknn-toolkit2.zip https://github.com/rockchip-linux/rknn-toolkit2/ar
     cd .. && \
     rm -rf rknn-toolkit2.zip rknn-toolkit2-master
 
+# Fetch RKLLM library from airockchip repo
+RUN wget -O rknn-llm.zip https://github.com/airockchip/rknn-llm/archive/refs/tags/release-v1.2.2.zip && \
+    unzip rknn-llm.zip && \
+    mkdir -p /build/rkllm && \
+    cp rknn-llm-release-v1.2.2/rkllm-runtime/Linux/librkllm_api/aarch64/* /build/rkllm/ && \
+    rm -rf rknn-llm.zip rknn-llm-release-v1.2.2
+
 
 # Stage 2: Runtime stage
 FROM python:3.12-slim
@@ -45,6 +52,8 @@ RUN pip install /tmp/*.whl && rm /tmp/*.whl
 # Copy RKNN libraries from build stage
 COPY --from=builder /build/rknn/*.so /usr/local/lib/
 COPY --from=builder /build/rknn/*.h /usr/local/include/
+# Copy RKLLM libraries from build stage
+COPY --from=builder /build/rkllm/* /usr/lib/
 RUN ldconfig
 
 # Set file limits like install.sh does
