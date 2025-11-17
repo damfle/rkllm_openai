@@ -27,7 +27,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: rkllm-openai-server
-          image: ghcr.io/damfle/rkllm_openai:v0.0.8
+          image: ghcr.io/damfle/rkllm_openai:v0.0.9
           command:
             - rkllm-openai-server
           args:
@@ -59,7 +59,7 @@ spec:
               cpu: "5000m"
           livenessProbe:
             httpGet:
-              path: /v1/models
+              path: /health
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 10
@@ -67,7 +67,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /v1/models
+              path: /health
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 5
