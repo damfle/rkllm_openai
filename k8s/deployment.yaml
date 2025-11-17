@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rkllm-openai-server
+  namespace: rkllm-openai
+  labels:
+    app: rkllm-openai-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rkllm-openai-server
+  template:
+    metadata:
+      labels:
+        app: rkllm-openai-server
+        npu: "true"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    npu: "true"
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: rkllm-openai-server
+          image: ghcr.io/damfle/rkllm_openai:v0.0.8
+          command:
+            - rkllm-openai-server
+          args:
+            - --model-path
+            - /app/models/Llama-3.2-3B-Instruct_W8A8_RK3588_v1.22.rkllm
+            - --host=0.0.0.0
+            - --port=8000
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: PYTHONPATH
+              value: "/app"
+            - name: LD_LIBRARY_PATH
+              value: "/usr/local/lib"
+          volumeMounts:
+            - name: shared-storage
+              mountPath: /app/models
+            - name: dev-dri
+              mountPath: /dev/dri
+            - name: proc-device-tree
+              mountPath: /proc/device-tree
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "10Gi"
+              cpu: "5000m"
+          livenessProbe:
+            httpGet:
+              path: /v1/models
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v1/models
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: true
+            readOnlyRootFilesystem: false
+            privileged: true
+      volumes:
+        - name: shared-storage
+          persistentVolumeClaim:
+            claimName: rkllm-openai-pvc
+        - name: dev-dri
+          hostPath:
+            path: /dev/dri
+            type: Directory
+        - name: proc-device-tree
+          hostPath:
+            path: /proc/device-tree
+            type: Directory
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
