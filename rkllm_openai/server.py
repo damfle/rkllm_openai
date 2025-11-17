@@ -173,21 +173,23 @@ def create_app():
                 for message in req.messages:
                     if message.role == "system":
                         system_message_found = True
-                        # Use the original system message in the prompt
-                        prompt_parts.append(f"System: {message.content}")
+                        # Use the proper chat template format
+                        prompt_parts.append(f"<|system|>\n{message.content}</s>")
                     elif message.role == "user":
-                        prompt_parts.append(f"User: {message.content}")
+                        prompt_parts.append(f"<|user|>\n{message.content}</s>")
                     elif message.role == "assistant":
                         if message.content:
-                            prompt_parts.append(f"Assistant: {message.content}")
+                            prompt_parts.append(f"<|assistant|>\n{message.content}</s>")
                     elif message.role == "tool":
-                        prompt_parts.append(f"Tool response: {message.content}")
+                        prompt_parts.append(f"<|tool|>\n{message.content}</s>")
 
                 # If no system message, use default
                 if not system_message_found:
-                    prompt_parts.insert(0, f"System: You are a helpful assistant.")
+                    prompt_parts.insert(
+                        0, f"<|system|>\nYou are a helpful assistant.</s>"
+                    )
 
-                prompt = "\n".join(prompt_parts) + "\nAssistant:"
+                prompt = " ".join(prompt_parts) + " <|assistant|>\n"
 
                 if req.stream:
                     return Response(
