@@ -112,7 +112,7 @@ def format_tools_for_prompt(tools: List[Union[dict, BaseModel]]) -> str:
     return (
         "\n\nAvailable functions:\n"
         + "\n\n".join(tool_descriptions)
-        + '\n\nTo call a function, use this format with two line breaks before:\n\n<tool_call>\n{"name": "function_name", "arguments": {"param": "value"}}\n</tool_call>'
+        + '\n\nIMPORTANT: Only use these functions when they are directly relevant and necessary to answer the user\'s question. For general questions that don\'t require these specific functions, respond normally without calling any functions.\n\nTo call a function only when needed, use this format with two line breaks before:\n\n<tool_call>\n{"name": "function_name", "arguments": {"param": "value"}}\n</tool_call>'
     )
 
 
@@ -126,7 +126,7 @@ def get_system_prompt_with_tools(
     tool_instructions = format_tools_for_prompt(tools)
 
     if original_system_prompt:
-        return f"{original_system_prompt}\n\n{tool_instructions}"
+        return f"{original_system_prompt}{tool_instructions}"
     else:
         return f"You are a helpful assistant.{tool_instructions}"
 

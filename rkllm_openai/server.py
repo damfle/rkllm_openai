@@ -12,6 +12,7 @@ This server provides OpenAI-compatible endpoints for RKLLM models including:
 """
 
 import argparse
+import logging
 import os
 import sys
 import threading
@@ -46,6 +47,14 @@ def create_app():
     """Create and configure the Flask application."""
     app = Flask(__name__)
     CORS(app)
+
+    # Custom logging filter to exclude health endpoint
+    class HealthFilter(logging.Filter):
+        def filter(self, record):
+            return "/health" not in record.getMessage()
+
+    # Apply filter to werkzeug logger
+    logging.getLogger("werkzeug").addFilter(HealthFilter())
 
     @app.route("/health", methods=["GET"])
     def health():
@@ -135,10 +144,16 @@ def create_app():
                     # Convert OpenAI tools to RKLLM format
                     tools_json = convert_openai_tools_to_rkllm_format(req.tools)
 
-                    # Extract system prompt for tool configuration
-                    system_prompt = "You are a helpful assistant."
+                    # Extract actual system prompt from messages if provided
+                    user_system_prompt = "You are a helpful assistant."
+                    for message in req.messages:
+                        if message.role == "system":
+                            user_system_prompt = message.content
+                            break
+
+                    # Enhance with tool instructions
                     enhanced_system_prompt = get_system_prompt_with_tools(
-                        system_prompt, req.tools
+                        user_system_prompt, req.tools
                     )
 
                     # Configure model with tools
@@ -158,14 +173,8 @@ def create_app():
                 for message in req.messages:
                     if message.role == "system":
                         system_message_found = True
-                        # If tools are provided, enhance the system message
-                        if req.tools:
-                            enhanced_content = get_system_prompt_with_tools(
-                                message.content, req.tools
-                            )
-                            prompt_parts.append(f"System: {enhanced_content}")
-                        else:
-                            prompt_parts.append(f"System: {message.content}")
+                        # Use the original system message in the prompt
+                        prompt_parts.append(f"System: {message.content}")
                     elif message.role == "user":
                         prompt_parts.append(f"User: {message.content}")
                     elif message.role == "assistant":
@@ -174,12 +183,9 @@ def create_app():
                     elif message.role == "tool":
                         prompt_parts.append(f"Tool response: {message.content}")
 
-                # If no system message but tools are provided, add enhanced system message
-                if req.tools and not system_message_found:
-                    enhanced_system = get_system_prompt_with_tools(
-                        "You are a helpful assistant.", req.tools
-                    )
-                    prompt_parts.insert(0, f"System: {enhanced_system}")
+                # If no system message, use default
+                if not system_message_found:
+                    prompt_parts.insert(0, f"System: You are a helpful assistant.")
 
                 prompt = "\n".join(prompt_parts) + "\nAssistant:"
 
