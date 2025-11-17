@@ -6,7 +6,7 @@ import json
 import threading
 import time
 import uuid
-from typing import TYPE_CHECKING, List, Tuple
+from typing import TYPE_CHECKING
 
 from flask import jsonify
 
@@ -22,117 +22,46 @@ if TYPE_CHECKING:
     from ..bindings import RKLLM
 
 
-def _is_flush_point(char: str) -> bool:
+def _should_flush_token_buffer(char: str) -> bool:
     """
-    Check if a character is a natural flush point for streaming.
+    Check if a character should trigger flushing the token buffer.
 
     Args:
         char: Character to check
 
     Returns:
-        True if this character should trigger a flush
+        True if this character should trigger a flush (whitespace, newline, etc.)
     """
-    # Whitespace characters (space, tab, etc.)
-    if char.isspace():
-        return True
-
-    # Sentence ending punctuation
-    if char in ".!?":
-        return True
-
-    # Other natural break points
-    if char in ",;:":
-        return True
-
-    return False
+    return char.isspace()
 
 
-def _separate_printable_and_nonprintable(text: str) -> List[Tuple[str, bool]]:
+def _process_token_buffer(
+    text_buffer: list[str], accumulated_buffer: list[str]
+) -> list[str]:
     """
-    Separate text into printable and non-printable character groups.
+    Process token buffer and return complete words ready to be sent.
 
     Args:
-        text: Input text to separate
+        text_buffer: New tokens from the model
+        accumulated_buffer: Buffer of accumulated tokens waiting for word boundary
 
     Returns:
-        List of tuples (text_chunk, is_printable) where is_printable indicates
-        if the chunk contains only printable characters (excluding whitespace)
+        List of complete words ready to be sent
     """
-    if not text:
-        return []
+    words_to_send = []
 
-    chunks = []
-    current_chunk = ""
-    current_is_printable = None
+    for token in text_buffer:
+        accumulated_buffer.append(token)
 
-    for char in text:
-        # Whitespace and control characters are non-printable
-        char_is_printable = not char.isspace() and char.isprintable()
-
-        if current_is_printable is None:
-            current_is_printable = char_is_printable
-            current_chunk = char
-        elif current_is_printable == char_is_printable:
-            current_chunk += char
-        else:
-            # Transition between printable and non-printable
-            if current_chunk:
-                chunks.append((current_chunk, current_is_printable))
-            current_chunk = char
-            current_is_printable = char_is_printable
-
-    # Add the last chunk
-    if current_chunk:
-        chunks.append((current_chunk, current_is_printable))
-
-    return chunks
-
-
-def _process_streaming_buffer(
-    text_buffer: List[str], accumulated_buffer: List[str]
-) -> List[str]:
-    """
-    Process streaming text buffer and return chunks ready to be sent.
-
-    Args:
-        text_buffer: New text chunks from the model
-        accumulated_buffer: Buffer of accumulated text waiting for flush point
-
-    Returns:
-        List of text chunks ready to be sent
-    """
-    chunks_to_send = []
-
-    for text_chunk in text_buffer:
-        accumulated_buffer.append(text_chunk)
-
-        # Check if we have any flush points in the accumulated text
-        accumulated_text = "".join(accumulated_buffer)
-
-        # Find the last flush point
-        last_flush_idx = -1
-        for i, char in enumerate(accumulated_text):
-            if _is_flush_point(char):
-                last_flush_idx = i
-
-        if last_flush_idx >= 0:
-            # We found a flush point, send everything up to and including it
-            text_to_send = accumulated_text[: last_flush_idx + 1]
-            remaining_text = accumulated_text[last_flush_idx + 1 :]
-
-            # Separate printable and non-printable characters
-            separated_chunks = _separate_printable_and_nonprintable(text_to_send)
-
-            for chunk_text, is_printable in separated_chunks:
-                if chunk_text:  # Only add non-empty chunks
-                    chunks_to_send.append(chunk_text)
-
-            # Update the accumulated buffer with remaining text
+        # Check if the token ends with a character that indicates word boundary
+        if token and _should_flush_token_buffer(token[-1]):
+            # Send the complete accumulated text as one chunk
+            complete_text = "".join(accumulated_buffer)
+            if complete_text:
+                words_to_send.append(complete_text)
             accumulated_buffer.clear()
-            if remaining_text:
-                accumulated_buffer.append(remaining_text)
 
-    return chunks_to_send
+    return words_to_send
 
 
 def generate_chat_completion(
@@ -235,16 +164,16 @@ def stream_chat_completion(
     # Stream responses
     accumulated_content = ""
     tool_calls_sent = False
-    streaming_buffer = []  # Buffer for accumulating text until flush point
+    token_buffer = []  # Buffer for accumulating tokens until word boundaries
 
     while thread.is_alive() or len(current_model.get_text_buffer()) > 0:
         text_buffer = current_model.get_text_buffer()
 
         if text_buffer:
-            # Process the buffer for streaming chunks
-            chunks_to_send = _process_streaming_buffer(text_buffer, streaming_buffer)
+            # Process tokens and get complete words ready to send
+            words_to_send = _process_token_buffer(text_buffer, token_buffer)
 
-            for text_chunk in chunks_to_send:
+            for text_chunk in words_to_send:
                 accumulated_content += text_chunk
 
                 # Check if we have a complete tool call
@@ -294,9 +223,9 @@ def stream_chat_completion(
 
         thread.join(timeout=0.01)
 
-    # Send any remaining buffered content at the end
-    if streaming_buffer:
-        remaining_text = "".join(streaming_buffer)
+    # Send any remaining tokens in the buffer
+    if token_buffer:
+        remaining_text = "".join(token_buffer)
         if remaining_text:
             accumulated_content += remaining_text
             clean_chunk = clean_content_for_tools(remaining_text)
@@ -399,16 +328,16 @@ def stream_completion(prompt: str, req: CompletionRequest, current_model: "RKLLM
     thread.start()
 
     # Stream responses
-    streaming_buffer = []  # Buffer for accumulating text until flush point
+    token_buffer = []  # Buffer for accumulating tokens until word boundaries
 
     while thread.is_alive() or len(current_model.get_text_buffer()) > 0:
         text_buffer = current_model.get_text_buffer()
 
         if text_buffer:
-            # Process the buffer for streaming chunks
-            chunks_to_send = _process_streaming_buffer(text_buffer, streaming_buffer)
+            # Process tokens and get complete words ready to send
+            words_to_send = _process_token_buffer(text_buffer, token_buffer)
 
-            for text_chunk in chunks_to_send:
+            for text_chunk in words_to_send:
                 chunk = {
                     "id": completion_id,
                     "object": "text_completion",
@@ -429,9 +358,9 @@ def stream_completion(prompt: str, req: CompletionRequest, current_model: "RKLLM
 
         thread.join(timeout=0.01)
 
-    # Send any remaining buffered content at the end
-    if streaming_buffer:
-        remaining_text = "".join(streaming_buffer)
+    # Send any remaining tokens in the buffer
+    if token_buffer:
+        remaining_text = "".join(token_buffer)
         if remaining_text:
             chunk = {
                 "id": completion_id,

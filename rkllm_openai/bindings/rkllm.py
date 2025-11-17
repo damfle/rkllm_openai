@@ -289,55 +289,32 @@ class RKLLM:
         if not os.path.exists(template_path):
             raise FileNotFoundError(f"Chat template file not found: {template_path}")
 
-        try:
-            # Try to import jinja2 for template parsing
-            import jinja2
+        from jinja2 import BaseLoader, Environment
 
-            with open(template_path, "r", encoding="utf-8") as f:
-                template_content = f.read()
+        with open(template_path, "r", encoding="utf-8") as f:
+            template_content = f.read()
 
-            # Parse the jinja2 template (basic parsing for common patterns)
-            # This is a simplified implementation - a full jinja2 parser would be more complex
+        # Extract template parts for different roles
+        system_template = self._extract_template_part(template_content, "system")
+        user_template = self._extract_template_part(template_content, "user")
+        assistant_template = self._extract_template_part(template_content, "assistant")
 
-            # Extract system, user, and assistant templates
-            system_template = self._extract_template_part(template_content, "system")
-            user_template = self._extract_template_part(template_content, "user")
-            assistant_template = self._extract_template_part(
-                template_content, "assistant"
+        # Apply templates if found
+        if system_template or user_template or assistant_template:
+            self.apply_chat_template(system_template, user_template, assistant_template)
+            print(f"Loaded chat template from {template_path}")
+        else:
+            print(
+                f"Warning: Could not parse templates from {template_path}, using defaults"
             )
-
-            # Apply the extracted templates
-            if system_template or user_template or assistant_template:
-                self.apply_chat_template(
-                    system_template, user_template, assistant_template
-                )
-                print(f"Loaded chat template from {template_path}")
-            else:
-                print(
-                    f"Warning: Could not parse templates from {template_path}, using defaults"
-                )
-
-        except ImportError:
-            # If jinja2 is not available, try basic text parsing
-            print("Warning: jinja2 not available, using basic template parsing")
-            self._load_template_basic(template_path)
 
     def _extract_template_part(self, template_content: str, role: str) -> str:
         """
         Extract template part for a specific role from jinja2 template.
-
-        This is a basic implementation that looks for common patterns.
         """
         import re
 
-        # Look for patterns like {% if message['role'] == 'system' %}...{% endif %}
-        pattern = rf"{{% if message\['role'\] == '{role}' %}}(.*?){{% endif %}}"
-        match = re.search(pattern, template_content, re.DOTALL)
-
-        if match:
-            return match.group(1).strip()
-
-        # Alternative pattern: {%- if message.role == 'system' -%}
+        # Look for patterns like {%- if message.role == 'system' -%}...{%- endif -%}
         pattern = rf"{{%- if message\.role == '{role}' -%}}(.*?){{%- endif -%}}"
         match = re.search(pattern, template_content, re.DOTALL)
 
@@ -345,21 +322,6 @@ class RKLLM:
             return match.group(1).strip()
 
         return None
-
-    def _load_template_basic(self, template_path: str):
-        """
-        Basic template loading without jinja2 dependency.
-        """
-        with open(template_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Look for common template markers and use defaults
-        if "im_start" in content and "im_end" in content:
-            # Looks like a ChatML-style template
-            self.apply_chat_template()
-        else:
-            print("Warning: Unrecognized template format, using defaults")
-            self.apply_chat_template()
 
     def generate(self, prompt: str, role: str = "user", enable_thinking: bool = False):
         """

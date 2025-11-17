@@ -12,6 +12,12 @@ from .models import (
     ToolCall,
     ToolFunction,
 )
+from .response_generators import (
+    generate_chat_completion,
+    generate_completion,
+    stream_chat_completion,
+    stream_completion,
+)
 from .tool_utils import (
     clean_content_for_tools,
     convert_openai_tools_to_rkllm_format,
@@ -21,19 +27,6 @@ from .tool_utils import (
     parse_tool_calls,
     should_force_tool_use,
 )
-
-# Conditionally import response generators to avoid Flask dependency issues
-try:
-    from .response_generators import (
-        generate_chat_completion,
-        generate_completion,
-        stream_chat_completion,
-        stream_completion,
-    )
-
-    _response_generators_available = True
-except ImportError:
-    _response_generators_available = False
 
 __all__ = [
     # Models
@@ -54,13 +47,11 @@ __all__ = [
     "get_forced_tool_name",
 ]
 
-# Add response generators to __all__ if available
-if _response_generators_available:
-    __all__.extend(
-        [
-            "generate_chat_completion",
-            "stream_chat_completion",
-            "generate_completion",
-            "stream_completion",
-        ]
-    )
+__all__.extend(
+    [
+        "generate_chat_completion",
+        "stream_chat_completion",
+        "generate_completion",
+        "stream_completion",
+    ]
+)

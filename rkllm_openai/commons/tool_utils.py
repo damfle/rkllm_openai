@@ -21,30 +21,9 @@ def parse_tool_calls(content: str) -> List[dict]:
     """Parse tool calls from model response."""
     tool_calls = []
 
-    # Look for <tool_call>...</tool_call> patterns (standard case)
-    pattern = r"<tool_call>\s*(\{.*?\})\s*</tool_call>"
+    # Look for double line breaks followed by <tool_call>...</tool_call>
+    pattern = r"\n\n\s*<tool_call>\s*(\{.*?\})\s*</tool_call>"
     matches = re.findall(pattern, content, re.DOTALL)
-
-    # If no standard matches, look for JSON after </tool_call> (split case)
-    if not matches:
-        # Look for </tool_call> followed by JSON (handle nested braces)
-        split_pattern = r"</tool_call>\s*(\{.*?\})\s*$"
-        split_matches = re.findall(split_pattern, content, re.DOTALL)
-        if split_matches:
-            matches = split_matches
-
-    # Also try to find standalone JSON that looks like tool calls
-    if not matches:
-        # Look for JSON objects with "name" and optionally "arguments"
-        json_pattern = r'\{[^{}]*"name"\s*:\s*"[^"]*"[^{}]*\}'
-        json_matches = re.findall(json_pattern, content)
-        for json_match in json_matches:
-            try:
-                tool_data = json.loads(json_match)
-                if "name" in tool_data:
-                    matches.append(json_match)
-            except json.JSONDecodeError:
-                continue
 
     for i, match in enumerate(matches):
         try:
@@ -65,14 +44,10 @@ def parse_tool_calls(content: str) -> List[dict]:
 
 def clean_content_for_tools(content: str) -> str:
     """Remove tool call markers from content."""
-    # Remove <tool_call>...</tool_call> patterns
+    # Remove double line breaks followed by <tool_call>...</tool_call>
     cleaned = re.sub(
-        r"<tool_call>\s*\{.*?\}\s*</tool_call>", "", content, flags=re.DOTALL
+        r"\n\n\s*<tool_call>\s*\{.*?\}\s*</tool_call>", "", content, flags=re.DOTALL
     )
-    # Also remove split patterns: </tool_call> followed by JSON
-    cleaned = re.sub(r"</tool_call>\s*\{.*?\}\s*$", "", cleaned, flags=re.DOTALL)
-    # Remove standalone JSON tool calls
-    cleaned = re.sub(r'\{[^{}]*"name"\s*:\s*"[^"]*"[^{}]*\}', "", cleaned)
     return cleaned.strip()
 
 
@@ -137,7 +112,7 @@ def format_tools_for_prompt(tools: List[Union[dict, BaseModel]]) -> str:
     return (
         "\n\nAvailable functions:\n"
         + "\n\n".join(tool_descriptions)
-        + '\n\nTo call a function, use this format:\n<tool_call>\n{"name": "function_name", "arguments": {"param": "value"}}\n</tool_call>'
+        + '\n\nTo call a function, use this format with two line breaks before:\n\n<tool_call>\n{"name": "function_name", "arguments": {"param": "value"}}\n</tool_call>'
     )
 
 

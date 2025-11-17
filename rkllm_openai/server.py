@@ -29,19 +29,13 @@ from .commons import (
     get_system_prompt_with_tools,
     should_force_tool_use,
 )
+from .commons.response_generators import (
+    generate_chat_completion,
+    generate_completion,
+    stream_chat_completion,
+    stream_completion,
+)
 from .model_manager import ModelManager
-
-# Import response generators separately to handle Flask dependencies
-try:
-    from .commons.response_generators import (
-        generate_chat_completion,
-        generate_completion,
-        stream_chat_completion,
-        stream_completion,
-    )
-except ImportError as e:
-    print(f"Warning: Could not import response generators: {e}")
-    raise
 
 # Global variables
 model_manager: Optional[ModelManager] = None
