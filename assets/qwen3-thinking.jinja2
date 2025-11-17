@@ -1,0 +1,79 @@
+{%- if messages[0]['role'] == 'system' -%}
+    {%- set system_message = messages[0]['content'] -%}
+    {%- set messages = messages[1:] -%}
+{%- else -%}
+    {%- set system_message = "" -%}
+{%- endif -%}
+
+{%- set last_user_idx = -1 -%}
+{%- for message in messages -%}
+    {%- if message['role'] == 'user' -%}
+        {%- set last_user_idx = loop.index0 -%}
+    {%- endif -%}
+{%- endfor -%}
+
+{%- if system_message or tools -%}
+<|im_start|>system
+{%- if system_message %}
+{{ system_message }}
+
+{%- endif -%}
+{%- if tools %}
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+<tools>
+{%- for tool in tools %}
+{"type": "function", "function": {{ tool.function | tojson }}}
+{%- endfor %}
+</tools>
+
+For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+<tool_call>
+{"name": <function-name>, "arguments": <args-json-object>}
+</tool_call>
+{%- endif -%}
+<|im_end|>
+{%- endif -%}
+
+{%- for message in messages -%}
+    {%- set is_last = loop.last -%}
+    {%- set current_idx = loop.index0 -%}
+
+    {%- if message['role'] == 'user' -%}
+<|im_start|>user
+{{ message['content'] }}<|im_end|>
+    {%- elif message['role'] == 'assistant' -%}
+<|im_start|>assistant
+        {%- if enable_thinking and message.get('thinking') and (is_last or current_idx > last_user_idx) -%}
+<think>{{ message['thinking'] }}</think>
+        {%- endif -%}
+        {%- if message.get('content') -%}
+{{ message['content'] }}
+        {%- endif -%}
+        {%- if message.get('tool_calls') -%}
+            {%- for tool_call in message['tool_calls'] -%}
+<tool_call>
+{"name": "{{ tool_call['function']['name'] }}", "arguments": {{ tool_call['function']['arguments'] }}}
+</tool_call>
+            {%- endfor -%}
+        {%- endif -%}
+        {%- if not is_last -%}
+<|im_end|>
+        {%- endif %}
+    {%- elif message['role'] == 'tool' -%}
+<|im_start|>user
+<tool_response>
+{{ message['content'] }}
+</tool_response><|im_end|>
+    {%- endif -%}
+
+    {%- if message['role'] != 'assistant' and is_last -%}
+<|im_start|>assistant
+        {%- if enable_thinking -%}
+<think>
+        {%- endif -%}
+    {%- endif -%}
+{%- endfor -%}

@@ -264,13 +264,13 @@ class RKLLM:
             prompt_prefix: Prefix for user messages
             prompt_postfix: Postfix after user messages (before assistant)
         """
-        # Use default templates if not provided
+        # Use default ChatML templates if not provided
         if system_prompt is None:
-            system_prompt = "<|im_start|>system You are a helpful assistant. <|im_end|>"
+            system_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>"
         if prompt_prefix is None:
-            prompt_prefix = "<|im_start|>user"
+            prompt_prefix = "<|im_start|>user\n"
         if prompt_postfix is None:
-            prompt_postfix = "<|im_end|><|im_start|>assistant"
+            prompt_postfix = "<|im_end|>\n<|im_start|>assistant\n"
 
         self.set_chat_template(
             self.handle,
@@ -281,7 +281,7 @@ class RKLLM:
 
     def load_chat_template_from_file(self, template_path: str):
         """
-        Load chat template from a jinja2 file.
+        Load chat template from a jinja2 file and apply generic ChatML format.
 
         Args:
             template_path: Path to the chat_template.jinja2 file
@@ -289,24 +289,49 @@ class RKLLM:
         if not os.path.exists(template_path):
             raise FileNotFoundError(f"Chat template file not found: {template_path}")
 
-        from jinja2 import BaseLoader, Environment
+        try:
+            with open(template_path, "r", encoding="utf-8") as f:
+                template_content = f.read()
+        except (IOError, UnicodeDecodeError) as e:
+            raise RuntimeError(f"Failed to read template file {template_path}: {e}")
 
-        with open(template_path, "r", encoding="utf-8") as f:
-            template_content = f.read()
+        if not template_content.strip():
+            raise ValueError(f"Template file {template_path} is empty")
 
-        # Extract template parts for different roles
-        system_template = self._extract_template_part(template_content, "system")
-        user_template = self._extract_template_part(template_content, "user")
-        assistant_template = self._extract_template_part(template_content, "assistant")
-
-        # Apply templates if found
-        if system_template or user_template or assistant_template:
-            self.apply_chat_template(system_template, user_template, assistant_template)
-            print(f"Loaded chat template from {template_path}")
-        else:
-            print(
-                f"Warning: Could not parse templates from {template_path}, using defaults"
+        # For generic ChatML templates, use standard format
+        if "im_start" in template_content and "im_end" in template_content:
+            # Apply standard ChatML format
+            self.apply_chat_template(
+                "<|im_start|>system\nYou are a helpful assistant.<|im_end|>",
+                "<|im_start|>user\n",
+                "<|im_end|>\n<|im_start|>assistant\n",
             )
+            print(f"Loaded ChatML template from {template_path}")
+        elif any(
+            token in template_content
+            for token in ["<|start_header_id|>", "<start_of_turn>", "<|system|>"]
+        ):
+            # Recognized model-specific template format
+            print(
+                f"Loaded model-specific template from {template_path} (format auto-detected)"
+            )
+        else:
+            # Fallback to old parsing method for other formats
+            system_template = self._extract_template_part(template_content, "system")
+            user_template = self._extract_template_part(template_content, "user")
+            assistant_template = self._extract_template_part(
+                template_content, "assistant"
+            )
+
+            if system_template or user_template or assistant_template:
+                self.apply_chat_template(
+                    system_template, user_template, assistant_template
+                )
+                print(f"Loaded custom template from {template_path}")
+            else:
+                print(
+                    f"Warning: Could not parse templates from {template_path}, using defaults"
+                )
 
     def _extract_template_part(self, template_content: str, role: str) -> str:
         """

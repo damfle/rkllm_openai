@@ -55,6 +55,9 @@ WORKDIR /app
 COPY --from=builder /build/wheels/*.whl /tmp/
 RUN pip install /tmp/*.whl && rm /tmp/*.whl
 
+# Copy chat templates
+COPY assets/ /app/assets/
+
 # Copy RKNN libraries from build stage
 COPY --from=builder /build/rknn/*.so /usr/local/lib/
 COPY --from=builder /build/rknn/*.h /usr/local/include/
@@ -70,6 +73,9 @@ RUN echo "* soft nofile 16384" >> /etc/security/limits.conf && \
 
 # Change ownership to app user
 RUN chown -R app:app /app
+
+# Ensure templates are readable
+RUN chmod -R 644 /app/assets/*.jinja2
 
 # Switch to app user
 USER app

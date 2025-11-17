@@ -1,0 +1,12 @@
+include README.md
+include LICENSE
+
+recursive-include rkllm_openai *.py
+recursive-include assets *.jinja2
+include assets/*.jinja2
+recursive-include rkllm_openai/assets *.jinja2
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .pytest_cache
+global-exclude venv

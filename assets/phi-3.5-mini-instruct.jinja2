@@ -5,29 +5,28 @@
     {%- set system_message = "You are a helpful assistant." -%}
 {%- endif -%}
 
-<|im_start|>system
-{{ system_message }}<|im_end|>
+<|system|>
+{{ system_message }}<|end|>
 {%- for message in messages -%}
     {%- if message['role'] == 'user' -%}
-<|im_start|>user
-{{ message['content'] }}<|im_end|>
+<|user|>
+{{ message['content'] }}<|end|>
     {%- elif message['role'] == 'assistant' -%}
-<|im_start|>assistant
-{%- if message.get('tool_calls') -%}
-    {%- for tool_call in message['tool_calls'] -%}
-
-<function=tool_call>
+<|assistant|>
+        {%- if message.get('tool_calls') -%}
+            {%- for tool_call in message['tool_calls'] -%}
+<|tool_call|>
 {"name": "{{ tool_call['function']['name'] }}", "arguments": {{ tool_call['function']['arguments'] }}}
-</function>
-    {%- endfor -%}
-{%- endif -%}
-{%- if message.get('content') -%}
+<|end|>
+            {%- endfor -%}
+        {%- endif -%}
+        {%- if message.get('content') -%}
 {{ message['content'] }}
-{%- endif -%}
-<|im_end|>
+        {%- endif -%}
+<|end|>
     {%- elif message['role'] == 'tool' -%}
-<|im_start|>tool
-{{ message['content'] }}<|im_end|>
+<|tool|>
+{{ message['content'] }}<|end|>
     {%- endif -%}
 {%- endfor -%}
-<|im_start|>assistant
+<|assistant|>

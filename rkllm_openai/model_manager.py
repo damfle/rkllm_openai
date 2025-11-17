@@ -55,10 +55,12 @@ class ModelManager:
         try:
             self._model = RKLLM(str(self.model_path), self.platform, self.lib_path)
 
-            # Apply chat template if configured
-            if self.chat_template and os.path.exists(self.chat_template):
-                self._model.load_chat_template_from_file(self.chat_template)
-                print(f"Applied chat template to model: {self.model_name}")
+            # Note: Chat template rendering is now handled at the server level using jinja2
+            # The RKLLM template system is no longer used
+            if self.chat_template:
+                print(
+                    f"Chat template configured for server-level rendering: {os.path.basename(self.chat_template)}"
+                )
 
             print(f"Successfully loaded model: {self.model_name}")
             return self._model

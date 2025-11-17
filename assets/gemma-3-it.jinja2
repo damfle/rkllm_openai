@@ -1,0 +1,40 @@
+{%- if messages[0]['role'] == 'system' -%}
+    {%- set system_message = messages[0]['content'] -%}
+    {%- set messages = messages[1:] -%}
+{%- else -%}
+    {%- set system_message = "" -%}
+{%- endif -%}
+
+{%- for message in messages -%}
+    {%- set is_last = loop.last -%}
+    {%- if message['role'] == 'user' -%}
+<start_of_turn>user
+{%- if loop.first and system_message %}
+{{ system_message }}
+
+{% endif -%}
+{{ message['content'] }}<end_of_turn>
+        {%- if is_last %}
+<start_of_turn>model
+        {%- endif %}
+    {%- elif message['role'] == 'assistant' -%}
+<start_of_turn>model
+        {%- if message.get('tool_calls') -%}
+            {%- for tool_call in message['tool_calls'] -%}
+
+<start_of_turn>tool_call
+{"name": "{{ tool_call['function']['name'] }}", "arguments": {{ tool_call['function']['arguments'] }}}
+<end_of_turn>
+            {%- endfor -%}
+        {%- endif -%}
+        {%- if message.get('content') -%}
+{{ message['content'] }}
+        {%- endif -%}
+        {%- if not is_last -%}
+<end_of_turn>
+        {%- endif %}
+    {%- elif message['role'] == 'tool' -%}
+<start_of_turn>tool
+{{ message['content'] }}<end_of_turn>
+    {%- endif -%}
+{%- endfor -%}

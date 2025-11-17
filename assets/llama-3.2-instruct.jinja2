@@ -1,0 +1,61 @@
+{%- if messages[0]['role'] == 'system' -%}
+    {%- set system_message = messages[0]['content'] -%}
+    {%- set messages = messages[1:] -%}
+{%- else -%}
+    {%- set system_message = "You are a helpful assistant." -%}
+{%- endif -%}
+
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+Cutting Knowledge Date: December 2023
+
+{{ system_message }}
+
+{%- if tools %}
+When you receive a tool call response, use the output to format an answer to the original user question.
+
+You are a helpful assistant with tool calling capabilities.
+{%- endif %}<|eot_id|>
+{%- for message in messages -%}
+    {%- set is_last = loop.last -%}
+    {%- if message['role'] == 'user' -%}
+<|start_header_id|>user<|end_header_id|>
+        {%- if tools and is_last %}
+
+Given the following functions, please respond with a JSON for a function call with its proper arguments that best answers the given prompt.
+
+Respond in the format {"name": function name, "parameters": dictionary of argument name and its value}. Do not use variables.
+
+            {%- for tool in tools %}
+{{ tool }}
+            {%- endfor %}
+{{ message['content'] }}<|eot_id|>
+        {%- else %}
+
+{{ message['content'] }}<|eot_id|>
+        {%- endif -%}
+        {%- if is_last %}
+<|start_header_id|>assistant<|end_header_id|>
+
+        {%- endif %}
+    {%- elif message['role'] == 'assistant' -%}
+<|start_header_id|>assistant<|end_header_id|>
+        {%- if message.get('tool_calls') -%}
+            {%- for tool_call in message['tool_calls'] -%}
+{"name": "{{ tool_call['function']['name'] }}", "parameters": {{ tool_call['function']['arguments'] }}}
+            {%- endfor -%}
+        {%- else -%}
+
+{{ message['content'] }}
+        {%- endif -%}
+        {%- if not is_last -%}<|eot_id|>{%- endif %}
+    {%- elif message['role'] == 'tool' -%}
+<|start_header_id|>ipython<|end_header_id|>
+
+{{ message['content'] }}<|eot_id|>
+        {%- if is_last %}
+<|start_header_id|>assistant<|end_header_id|>
+
+        {%- endif %}
+    {%- endif -%}
+{%- endfor -%}
